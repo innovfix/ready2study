@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Test - Ready2Study</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <header>
+        <div class="container nav-content">
+            <a href="dashboard.html" class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                </svg>
+                Ready<span>2Study</span>
+            </a>
+            <nav>
+                <div id="studentHeaderInfo" style="display: none;">
+                    <span id="headerName" style="font-weight: 600; margin-right: 1rem;"></span>
+                    <a href="dashboard.html" class="btn btn-secondary" style="margin-right: 0.5rem;">Back to Dashboard</a>
+                    <a href="#" id="logoutBtn" class="btn btn-secondary">Logout</a>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <div style="max-width: 900px; margin: 2rem auto;">
+                <!-- Test Header -->
+                <div id="testHeader" style="text-align: center; margin-bottom: 2rem;">
+                    <h1>Practice Test</h1>
+                    <p style="color: var(--text-muted);">Answer all questions. Total: 20 Marks (1×2 + 2×1 + 3×2 + 1×10)</p>
+                    <div style="margin-top: 1rem; padding: 1rem; background: #eef2ff; border-radius: var(--radius-lg); display: inline-block;">
+                        <span style="font-weight: 600; color: var(--primary);">Question <span id="currentQuestionNum">1</span> of <span id="totalQuestions">7</span></span>
+                        <span style="margin: 0 1rem;">|</span>
+                        <span style="font-weight: 600; color: var(--primary);">Total Marks: 20</span>
+                        <span style="margin: 0 1rem;">|</span>
+                        <span id="timer" style="font-weight: 600; color: var(--accent-amber);">Time: <span id="timeDisplay">00:00</span></span>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div style="margin-bottom: 2rem;">
+                    <div style="background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden;">
+                        <div id="progressBar" style="background: var(--gradient-primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-muted);">
+                        <span>Progress: <span id="progressPercent">0</span>%</span>
+                        <span>Marks Completed: <span id="marksCompleted">0</span>/20</span>
+                    </div>
+                </div>
+
+                <!-- Question Card -->
+                <div id="questionCard" class="question-card" style="margin-bottom: 2rem;">
+                    <div class="card-header">
+                        <span id="questionBadge" class="badge mark-1" style="font-size: 1rem; padding: 0.5rem 1.5rem;">1 Mark</span>
+                        <span style="font-size: 0.875rem; color: var(--text-muted);">Question <span id="qNum">1</span></span>
+                    </div>
+                    <div class="question-text" id="testQuestion" style="font-size: 1.125rem; line-height: 1.8;">
+                        <!-- Question will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Answer Input Section -->
+                <div class="answer-input-section">
+                    <div style="margin-bottom: 1rem;">
+                        <label class="form-label" style="font-weight: 600; margin-bottom: 0.75rem; display: block;">Your Answer:</label>
+                        
+                        <!-- Answer Mode Toggle -->
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                            <button id="textModeBtn" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><path d="M4 7V4h16v3"></path><path d="M9 20h6"></path><path d="M12 4v16"></path></svg>
+                                Type Answer
+                            </button>
+                            <button id="voiceModeBtn" class="btn btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                Speak Answer
+                            </button>
+                        </div>
+
+                        <!-- Text Input -->
+                        <div id="textInputSection">
+                            <textarea id="answerText" class="form-input" rows="6" placeholder="Type your answer here..." style="width: 100%; resize: vertical; font-family: inherit; font-size: 1rem;"></textarea>
+                            <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-muted);">
+                                Word count: <span id="wordCount">0</span> words
+                            </div>
+                        </div>
+
+                        <!-- Voice Input -->
+                        <div id="voiceInputSection" style="display: none;">
+                            <div style="padding: 2rem; background: #f8fafc; border-radius: var(--radius-lg); border: 2px dashed var(--border); text-align: center;">
+                                <button id="recordBtn" class="btn btn-primary" style="font-size: 1rem; padding: 1rem 2rem; margin-bottom: 1rem;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+                                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                                    </svg>
+                                    <span id="recordBtnText">Start Recording</span>
+                                </button>
+                                <div id="recordingStatus" style="display: none; color: var(--secondary); font-weight: 600; margin-bottom: 1rem;">
+                                    <div class="recording-indicator"></div>
+                                    Recording... Click to Stop
+                                </div>
+                                <div id="transcribedText" style="margin-top: 1rem; padding: 1rem; background: white; border-radius: var(--radius-lg); text-align: left; min-height: 100px; color: var(--text-main);">
+                                    Your transcribed answer will appear here...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Navigation Buttons -->
+                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                        <button id="prevBtn" class="btn btn-secondary" style="padding: 1rem;" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
+                            Previous
+                        </button>
+                        <button id="nextBtn" class="btn btn-primary" style="flex: 1; padding: 1rem; font-size: 1rem;">
+                            Next Question
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 0.5rem;">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                        <button id="submitTestBtn" class="btn btn-primary" style="padding: 1rem; font-size: 1rem; display: none;">
+                            Submit Test
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 0.5rem;">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polyline points="22 2 15 22 11 13 2 9 22 2"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div id="resultsSection" style="display: none; margin-top: 2rem;">
+                    <div class="question-card" style="background: linear-gradient(135deg, #eef2ff 0%, #f0fdfa 100%);">
+                        <h2 style="margin-bottom: 1rem; color: var(--primary);">Test Results</h2>
+                        <div style="text-align: center; padding: 2rem;">
+                            <div style="font-size: 3rem; font-weight: 800; color: var(--primary); margin-bottom: 0.5rem;">
+                                <span id="marksObtained">0</span>/20
+                            </div>
+                            <div style="font-size: 1.25rem; color: var(--text-muted); margin-bottom: 2rem;">
+                                <span id="percentageScore">0%</span> Score
+                            </div>
+                            <div id="gradeBadge" style="display: inline-block; padding: 0.75rem 2rem; border-radius: 999px; font-weight: 700; font-size: 1.125rem; margin-bottom: 2rem;">
+                                Grade: <span id="gradeText">F</span>
+                            </div>
+                        </div>
+
+                        <!-- Question-wise Results -->
+                        <div id="questionResults" style="margin-top: 2rem;">
+                            <h3 style="margin-bottom: 1rem;">Question-wise Results:</h3>
+                            <!-- Results for each question will be shown here -->
+                        </div>
+
+                        <div style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid var(--border);">
+                            <h3 style="margin-bottom: 1rem;">Overall Feedback:</h3>
+                            <div id="feedbackText" style="padding: 1.5rem; background: white; border-radius: var(--radius-lg); line-height: 1.8;">
+                                <!-- Feedback will be shown here -->
+                            </div>
+                        </div>
+                        <div style="margin-top: 2rem; display: flex; gap: 1rem;">
+                            <button id="retakeBtn" class="btn btn-secondary" style="flex: 1;">Retake Test</button>
+                            <a href="dashboard.html" class="btn btn-primary" style="flex: 1; text-decoration: none; text-align: center;">Back to Dashboard</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="js/mockData.js"></script>
+    <script src="js/testEvaluator.js"></script>
+    <script src="js/test.js"></script>
+</body>
+
+</html>

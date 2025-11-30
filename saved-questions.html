@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saved Important Questions - Ready2Study</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <header>
+        <div class="container nav-content">
+            <a href="dashboard.html" class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                </svg>
+                Ready<span>2Study</span>
+            </a>
+            <nav>
+                <div id="studentHeaderInfo" style="display: none;">
+                    <span id="headerName" style="font-weight: 600; margin-right: 1rem;"></span>
+                    <span id="headerDetails" style="font-size: 0.875rem; color: var(--text-muted); margin-right: 1rem;"></span>
+                    <a href="dashboard.html" class="btn btn-secondary" style="margin-right: 0.5rem;">Back to Dashboard</a>
+                    <a href="#" id="logoutBtn" class="btn btn-secondary">Logout</a>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <div style="margin: 2rem 0;">
+                <h1 style="margin-bottom: 0.5rem;">Saved Important Questions</h1>
+                <p style="color: var(--text-muted);">Questions organized by subject</p>
+            </div>
+
+            <div id="subjectsContainer" class="subjects-grid">
+                <!-- Subjects will be loaded here -->
+            </div>
+
+            <div id="emptyState" style="display: none; text-align: center; padding: 4rem; color: var(--text-muted);">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; opacity: 0.5;">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                <h3>No saved questions yet</h3>
+                <p>Mark questions as important from the dashboard to save them here.</p>
+                <a href="dashboard.html" class="btn btn-primary" style="margin-top: 1rem;">Go to Dashboard</a>
+            </div>
+        </div>
+    </main>
+
+    <script src="js/mockData.js"></script>
+    <script>
+        (function() {
+            'use strict';
+            
+            // Check authentication
+            const loggedIn = localStorage.getItem('ready2study_logged_in');
+            if (!loggedIn || loggedIn !== 'true') {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                const subjectsContainer = document.getElementById('subjectsContainer');
+                const emptyState = document.getElementById('emptyState');
+                const studentHeaderInfo = document.getElementById('studentHeaderInfo');
+                const headerName = document.getElementById('headerName');
+                const headerDetails = document.getElementById('headerDetails');
+                const logoutBtn = document.getElementById('logoutBtn');
+
+                // Load student info
+                try {
+                    const userDataStr = localStorage.getItem('ready2study_user');
+                    if (userDataStr) {
+                        const userData = JSON.parse(userDataStr);
+                        if (studentHeaderInfo) studentHeaderInfo.style.display = 'block';
+                        if (headerName) headerName.textContent = userData.name || 'Student';
+                        if (headerDetails) {
+                            if (userData.year) {
+                                headerDetails.textContent = `${userData.course || ''} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college || ''}`;
+                            } else {
+                                headerDetails.textContent = `${userData.course || ''} • ${userData.college || ''}`;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error loading user data:', e);
+                }
+
+                // Logout handler
+                if (logoutBtn) {
+                    logoutBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        window.isRedirecting = true;
+                        localStorage.clear();
+                        window.location.href = 'login.html';
+                    });
+                }
+
+                function getOrdinal(n) {
+                    if (!n) return '';
+                    const s = ["th", "st", "nd", "rd"];
+                    const v = n % 100;
+                    return s[(v - 20) % 10] || s[v] || s[0];
+                }
+
+                // Load saved questions
+                function loadSavedQuestions() {
+                    try {
+                        const saved = localStorage.getItem('ready2study_important_questions');
+                        const savedQuestions = saved ? JSON.parse(saved) : [];
+
+                        if (savedQuestions.length === 0) {
+                            if (emptyState) emptyState.style.display = 'block';
+                            if (subjectsContainer) subjectsContainer.style.display = 'none';
+                            return;
+                        }
+
+                        if (emptyState) emptyState.style.display = 'none';
+                        if (subjectsContainer) subjectsContainer.style.display = 'grid';
+
+                        // Group by subject
+                        const subjectsMap = {};
+                        savedQuestions.forEach(function(item) {
+                            const subject = item.subject || 'Uncategorized';
+                            if (!subjectsMap[subject]) {
+                                subjectsMap[subject] = [];
+                            }
+                            subjectsMap[subject].push(item);
+                        });
+
+                        // Render subjects
+                        if (subjectsContainer) {
+                            subjectsContainer.innerHTML = '';
+                            Object.keys(subjectsMap).sort().forEach(function(subject) {
+                                const subjectCard = document.createElement('div');
+                                subjectCard.className = 'subject-card';
+                                
+                                const questions = subjectsMap[subject];
+                                subjectCard.innerHTML = '<div class="subject-card-header"><h2>' + subject + '</h2><span class="question-count">' + questions.length + ' question' + (questions.length > 1 ? 's' : '') + '</span></div><div class="subject-questions">';
+                                
+                                questions.forEach(function(item) {
+                                    const q = item.question;
+                                    if (!q) return;
+                                    
+                                    const formattedAnswer = (q.answer || '').replace(/\n/g, '<br>');
+                                    let imageHtml = '';
+                                    if (q.image) {
+                                        if (Array.isArray(q.image)) {
+                                            imageHtml = '<div class="answer-images-grid">';
+                                            q.image.forEach(function(imgSrc) {
+                                                imageHtml += '<div class="answer-image-container"><img src="' + imgSrc + '" alt="Diagram" class="answer-image" onclick="openImageModal(this.src)"></div>';
+                                            });
+                                            imageHtml += '</div>';
+                                        } else {
+                                            imageHtml = '<div class="answer-image-container"><img src="' + q.image + '" alt="Diagram" class="answer-image" onclick="openImageModal(this.src)"></div>';
+                                        }
+                                    }
+                                    
+                                    subjectCard.innerHTML += '<div class="question-card"><div class="card-header"><span class="badge mark-' + (q.marks || 1) + '">' + (q.marks || 1) + ' Mark' + ((q.marks || 1) > 1 ? 's' : '') + '</span><span class="exam-date-badge">' + (q.examDate || '') + '</span></div><div class="question-text">' + (q.question || '') + '</div><button class="btn btn-secondary toggle-answer-btn" style="font-size: 0.875rem; padding: 0.5rem 1rem;">Show Answer</button><div class="answer-section"><div class="answer-text"><strong>Answer:</strong><br>' + formattedAnswer + imageHtml + '</div></div></div>';
+                                });
+                                
+                                subjectCard.innerHTML += '</div>';
+                                
+                                // Add toggle functionality
+                                const toggleBtns = subjectCard.querySelectorAll('.toggle-answer-btn');
+                                const answerSections = subjectCard.querySelectorAll('.answer-section');
+                                
+                                toggleBtns.forEach(function(btn, idx) {
+                                    btn.addEventListener('click', function() {
+                                        const answerSection = answerSections[idx];
+                                        if (answerSection) {
+                                            const isVisible = answerSection.classList.toggle('visible');
+                                            btn.textContent = isVisible ? "Hide Answer" : "Show Answer";
+                                        }
+                                    });
+                                });
+                                
+                                subjectsContainer.appendChild(subjectCard);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Error loading saved questions:', e);
+                        if (emptyState) emptyState.style.display = 'block';
+                    }
+                }
+
+                // Image modal functions
+                window.openImageModal = function(imgSrc) {
+                    const modal = document.createElement('div');
+                    modal.className = 'image-modal';
+                    modal.style.display = 'flex';
+                    modal.onclick = function() { document.body.removeChild(modal); };
+                    modal.innerHTML = '<span class="image-modal-close" onclick="this.parentElement.remove()">&times;</span><img class="image-modal-content" src="' + imgSrc + '"><div class="image-modal-caption">' + (imgSrc.split('/').pop() || 'Image') + '</div>';
+                    document.body.appendChild(modal);
+                };
+
+                loadSavedQuestions();
+            });
+        })();
+    </script>
+    <style>
+        .subjects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .subject-card {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+        }
+
+        .subject-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .subject-card-header h2 {
+            margin: 0;
+            color: var(--primary);
+            font-size: 1.25rem;
+        }
+
+        .question-count {
+            background: var(--gradient-primary);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .subject-questions {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+    </style>
+</body>
+
+</html>
+
