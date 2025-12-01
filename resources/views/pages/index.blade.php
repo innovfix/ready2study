@@ -1,0 +1,413 @@
+@extends('layouts.app')
+
+@section('title', 'Ready2Study - Transform PDFs into Study Material')
+
+@section('main-class', 'hero')
+
+@section('content')
+<div class="container">
+    <div class="hero-content">
+        <h1 id="greeting">Turn Your Notes into<br>Exam-Ready Questions</h1>
+        <p>Upload your study material (PDF) and let our AI generate 1-mark, 2-mark, 3-mark, and 10-mark
+            questions instantly.</p>
+
+        <div class="upload-card">
+            <div class="drop-zone" id="dropZone">
+                <svg class="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <h3>Drag & Drop your PDF here</h3>
+                <p style="font-size: 0.875rem; color: var(--text-muted);">or click to browse files</p>
+                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                <div class="file-info" id="fileInfo"></div>
+            </div>
+            <button class="btn btn-primary" id="generateBtn" style="width: 100%; margin-top: 1.5rem;" disabled>
+                Generate Questions
+            </button>
+        </div>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<!-- PDF.js library for reading PDF content -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const generateBtn = document.getElementById('generateBtn');
+        const loader = document.getElementById('loader');
+
+        // Check if student info exists, if not redirect to student-info page
+        const userData = JSON.parse(localStorage.getItem('ready2study_user'));
+        if (!userData) {
+            window.location.href = '{{ route("student.info") }}';
+            return;
+        }
+
+        // Click on drop zone to trigger file input
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                handleFile(files[0]);
+            } else {
+                alert('Please upload a PDF file.');
+            }
+        });
+
+        // File input change handler
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                if (file.type === 'application/pdf') {
+                    handleFile(file);
+                } else {
+                    alert('Please upload a PDF file.');
+                    fileInput.value = '';
+                }
+            }
+        });
+
+        function handleFile(file) {
+            // Validate file type
+            if (file.type !== 'application/pdf') {
+                alert('Please upload a PDF file only.');
+                fileInput.value = '';
+                return;
+            }
+
+            // Validate file size (max 10MB)
+            const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+            if (file.size > maxSize) {
+                alert('File size exceeds 10MB. Please upload a smaller file.');
+                fileInput.value = '';
+                return;
+            }
+
+            // Display file information
+            const fileSize = (file.size / 1024 / 1024).toFixed(2); // Convert to MB
+            fileInfo.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; padding: 1rem; background: #f0fdfa; border-radius: 0.5rem; border: 1px solid var(--border);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <div style="flex: 1;">
+                        <strong style="color: var(--primary); display: block; margin-bottom: 0.25rem;">${file.name}</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">${fileSize} MB</div>
+                    </div>
+                    <button onclick="removeFile()" style="background: #fee2e2; color: #991b1b; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">Remove</button>
+                </div>
+            `;
+            fileInfo.style.display = 'block';
+            generateBtn.disabled = false;
+
+            // Store file information in localStorage
+            localStorage.setItem('ready2study_pdf', JSON.stringify({
+                name: file.name,
+                size: file.size,
+                uploaded: true,
+                uploadDate: new Date().toISOString()
+            }));
+
+            // Store the file object for later processing
+            window.currentPDFFile = file;
+            
+            // Read file as ArrayBuffer for PDF.js
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // Store file data for PDF processing
+                window.currentPDFArrayBuffer = e.target.result;
+                console.log('PDF file loaded successfully:', file.name);
+            };
+            reader.onerror = function() {
+                alert('Error reading file. Please try again.');
+                removeFile();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Remove file function
+        window.removeFile = function() {
+            if (confirm('Are you sure you want to remove this file?')) {
+                fileInput.value = '';
+                fileInfo.style.display = 'none';
+                fileInfo.innerHTML = '';
+                generateBtn.disabled = true;
+                localStorage.removeItem('ready2study_pdf');
+            }
+        };
+
+        // Function to extract text from PDF
+        async function extractTextFromPDF(arrayBuffer) {
+            try {
+                // Set up PDF.js worker
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                
+                // Load the PDF document
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdf = await loadingTask.promise;
+                
+                let fullText = '';
+                const totalPages = pdf.numPages;
+                
+                // Extract text from each page
+                for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + '\n\n';
+                }
+                
+                return fullText.trim();
+            } catch (error) {
+                console.error('Error extracting text from PDF:', error);
+                throw error;
+            }
+        }
+
+        // Function to generate questions from PDF content
+        function generateQuestionsFromPDF(pdfText) {
+            // Split text into sentences and paragraphs
+            const paragraphs = pdfText.split(/\n\s*\n/).filter(p => p.trim().length > 50);
+            const sentences = pdfText.match(/[^.!?]+[.!?]+/g) || [];
+            
+            const questions = [];
+            let questionId = 1;
+            
+            // Generate 1-mark questions (simple definitions, short answers)
+            const oneMarkCount = Math.min(2, Math.floor(paragraphs.length / 4));
+            for (let i = 0; i < oneMarkCount && i < paragraphs.length; i++) {
+                const para = paragraphs[i].trim();
+                if (para.length > 100) {
+                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                    if (sentences.length > 0) {
+                        const firstSentence = sentences[0].trim();
+                        const keyTerm = firstSentence.split(' ').slice(0, 3).join(' ');
+                        const answer = firstSentence.substring(0, 150);
+                        
+                        questions.push({
+                            id: questionId++,
+                            question: `What is ${keyTerm}?`,
+                            answer: answer,
+                            marks: 1,
+                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        });
+                    }
+                }
+            }
+            
+            // Generate 2-mark questions (explanations)
+            const twoMarkCount = Math.min(2, Math.floor(paragraphs.length / 3));
+            for (let i = oneMarkCount; i < oneMarkCount + twoMarkCount && i < paragraphs.length; i++) {
+                const para = paragraphs[i].trim();
+                if (para.length > 150) {
+                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                    if (sentences.length >= 2) {
+                        const questionText = sentences[0].trim().substring(0, 100) + '?';
+                        const answer = sentences.slice(0, 2).join(' ').substring(0, 200);
+                        
+                        questions.push({
+                            id: questionId++,
+                            question: `Explain: ${questionText}`,
+                            answer: answer,
+                            marks: 2,
+                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        });
+                    }
+                }
+            }
+            
+            // Generate 3-mark questions (detailed explanations)
+            const threeMarkCount = Math.min(2, Math.floor(paragraphs.length / 2));
+            for (let i = oneMarkCount + twoMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount && i < paragraphs.length; i++) {
+                const para = paragraphs[i].trim();
+                if (para.length > 200) {
+                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                    if (sentences.length >= 3) {
+                        const firstWords = sentences[0].trim().split(' ').slice(0, 5).join(' ');
+                        const questionText = `Describe ${firstWords} in detail.`;
+                        const answer = sentences.slice(0, 3).join(' ').substring(0, 300);
+                        
+                        questions.push({
+                            id: questionId++,
+                            question: questionText,
+                            answer: answer,
+                            marks: 3,
+                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        });
+                    }
+                }
+            }
+            
+            // Generate 10-mark questions (comprehensive answers)
+            const tenMarkCount = Math.min(2, Math.floor(paragraphs.length / 1.5));
+            for (let i = oneMarkCount + twoMarkCount + threeMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount + tenMarkCount && i < paragraphs.length; i++) {
+                const para = paragraphs[i].trim();
+                if (para.length > 300) {
+                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                    if (sentences.length >= 5) {
+                        const firstWords = sentences[0].trim().split(' ').slice(0, 6).join(' ');
+                        const questionText = `Write a comprehensive answer about ${firstWords}.`;
+                        const answer = sentences.slice(0, Math.min(8, sentences.length)).join(' ').substring(0, 500);
+                        
+                        questions.push({
+                            id: questionId++,
+                            question: questionText,
+                            answer: answer,
+                            marks: 10,
+                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        });
+                    }
+                }
+            }
+            
+            // If not enough questions generated, add some from mock data
+            if (questions.length < 4) {
+                const mockQuestionsToAdd = mockQuestions.slice(0, 4 - questions.length);
+                mockQuestionsToAdd.forEach(q => {
+                    questions.push({
+                        ...q,
+                        id: questionId++
+                    });
+                });
+            }
+            
+            return questions;
+        }
+
+        // Generate questions button handler
+        generateBtn.addEventListener('click', async () => {
+            const pdfData = localStorage.getItem('ready2study_pdf');
+            if (!pdfData) {
+                alert('Please upload a PDF file first.');
+                return;
+            }
+
+            if (!window.currentPDFArrayBuffer) {
+                alert('PDF file is still loading. Please wait a moment and try again.');
+                return;
+            }
+
+            // Disable button during processing
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Processing...';
+            loader.style.display = 'flex';
+            
+            const loaderTitle = document.getElementById('loaderTitle');
+            const loaderMessage = document.getElementById('loaderMessage');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            try {
+                // Step 1: Reading PDF
+                loaderTitle.textContent = 'Reading PDF Document...';
+                loaderMessage.textContent = 'Extracting text and content from PDF';
+                progressBar.style.width = '20%';
+                progressText.textContent = '20% - Reading PDF...';
+                
+                // Extract text from PDF
+                const pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
+                console.log('PDF Text Extracted:', pdfText.substring(0, 500) + '...');
+                
+                // Step 2: Analyzing Content
+                loaderTitle.textContent = 'Analyzing Content...';
+                loaderMessage.textContent = 'Identifying key concepts and topics';
+                progressBar.style.width = '40%';
+                progressText.textContent = '40% - Analyzing content...';
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Step 3: Generating Questions
+                loaderTitle.textContent = 'Generating Questions...';
+                loaderMessage.textContent = 'Creating questions organized by marks (1, 2, 3, 10)';
+                progressBar.style.width = '60%';
+                progressText.textContent = '60% - Generating questions...';
+                
+                const pdfQuestions = generateQuestionsFromPDF(pdfText);
+                
+                // Step 4: Organizing by Marks
+                loaderTitle.textContent = 'Organizing by Marks...';
+                loaderMessage.textContent = 'Categorizing questions into 1-mark, 2-mark, 3-mark, and 10-mark categories';
+                progressBar.style.width = '80%';
+                progressText.textContent = '80% - Organizing by marks...';
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Organize questions by marks for display
+                const questionsByMarks = {
+                    1: pdfQuestions.filter(q => q.marks === 1),
+                    2: pdfQuestions.filter(q => q.marks === 2),
+                    3: pdfQuestions.filter(q => q.marks === 3),
+                    10: pdfQuestions.filter(q => q.marks === 10)
+                };
+                
+                console.log('PDF Fully Processed - Questions organized by marks:', {
+                    '1 Mark': questionsByMarks[1].length,
+                    '2 Marks': questionsByMarks[2].length,
+                    '3 Marks': questionsByMarks[3].length,
+                    '10 Marks': questionsByMarks[10].length,
+                    'Total': pdfQuestions.length,
+                    'PDF Content Length': pdfText.length
+                });
+                
+                // Step 5: Finalizing
+                loaderTitle.textContent = 'Finalizing...';
+                loaderMessage.textContent = 'Preparing questions and answers for display';
+                progressBar.style.width = '100%';
+                progressText.textContent = '100% - Complete!';
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Store PDF questions and content in localStorage
+                localStorage.setItem('ready2study_pdf_questions', JSON.stringify(pdfQuestions));
+                localStorage.setItem('ready2study_pdf_content', pdfText); // Store full PDF content
+                localStorage.setItem('ready2study_pdf_uploaded', 'true');
+                localStorage.setItem('ready2study_pdf_name', JSON.parse(localStorage.getItem('ready2study_pdf')).name);
+                
+                loader.style.display = 'none';
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate Questions';
+                window.location.href = '{{ route("dashboard") }}';
+                
+            } catch (error) {
+                console.error('Error processing PDF:', error);
+                loader.style.display = 'none';
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate Questions';
+                alert('Error processing PDF. Please try again or use a different PDF file. Error: ' + error.message);
+            }
+        });
+
+        // Prevent default drag behaviors on the page
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+    });
+</script>
+@endpush
+

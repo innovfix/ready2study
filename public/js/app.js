@@ -31,11 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('headerDetails').textContent = `${userData.course} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college}`;
 
         // Logout / Edit Profile Logic
-        document.getElementById('logoutBtn').addEventListener('click', (e) => {
-            e.preventDefault();
-            localStorage.removeItem('ready2study_user');
-            window.location.href = 'student-info.html';
-        });
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                localStorage.removeItem('ready2study_user');
+                window.location.href = '/student-info';
+            });
+        }
     }
 
     function getOrdinal(n) {
@@ -69,37 +72,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const highlights = getQuestionHighlights(questionId);
         if (highlights.length === 0) return;
 
-        // Get the original text content (without existing highlights)
         const textContent = answerElement.textContent || answerElement.innerText || '';
         if (!textContent) return;
 
-        // Remove any existing highlight spans to get clean text
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = answerElement.innerHTML;
         const cleanText = tempDiv.textContent || tempDiv.innerText || '';
         
-        // Escape HTML to prevent issues
         const escapeHtml = (text) => {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         };
 
-        // Sort highlights in reverse order to maintain correct indices when inserting
         const sortedHighlights = [...highlights].sort((a, b) => b.start - a.start);
         
-        // Build segments array (start with full text)
         let segments = [];
         let lastIndex = cleanText.length;
         
-        // Process highlights in reverse order
         sortedHighlights.forEach(highlight => {
-            // Make sure indices are within bounds
             if (highlight.start < 0 || highlight.end > cleanText.length || highlight.start >= highlight.end) {
                 return;
             }
             
-            // Add segment after this highlight (if any)
             if (highlight.end < lastIndex) {
                 segments.unshift({
                     type: 'text',
@@ -107,7 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
             
-            // Add highlight segment
             segments.unshift({
                 type: 'highlight',
                 id: highlight.id,
@@ -117,7 +111,6 @@ document.addEventListener('DOMContentLoaded', () => {
             lastIndex = highlight.start;
         });
         
-        // Add any text before first highlight
         if (lastIndex > 0) {
             segments.unshift({
                 type: 'text',
@@ -125,7 +118,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // Build HTML from segments
         let htmlContent = '';
         segments.forEach(segment => {
             if (segment.type === 'highlight') {
@@ -135,8 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Update the answer element with highlighted content
-        // Preserve the "Answer:" label if it exists
         const answerLabel = answerElement.querySelector('strong');
         if (answerLabel && answerLabel.textContent.includes('Answer:')) {
             answerElement.innerHTML = '<strong>Answer:</strong><br>' + htmlContent;
@@ -156,17 +146,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (selectedText.length === 0) return false;
 
-        // Check if selection is within the answer element
         if (!answerElement.contains(range.commonAncestorContainer)) {
             return false;
         }
 
-        // Check if already highlighted
         if (range.commonAncestorContainer.parentElement?.classList.contains('highlight')) {
             return false;
         }
 
-        // Calculate offset by traversing text before selection
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(answerElement);
         preCaretRange.setEnd(range.startContainer, range.startOffset);
@@ -175,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const endOffset = startOffset + selectedText.length;
         const highlightId = Date.now();
 
-        // Save highlight
         const highlights = getQuestionHighlights(questionId);
         highlights.push({
             id: highlightId,
@@ -185,7 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         saveQuestionHighlights(questionId, highlights);
 
-        // Wrap selected text with highlight span
         try {
             const highlightSpan = document.createElement('span');
             highlightSpan.className = 'highlight';
@@ -196,14 +181,12 @@ document.addEventListener('DOMContentLoaded', () => {
             range.insertNode(highlightSpan);
         } catch (e) {
             console.error('Error applying highlight:', e);
-            // Fallback: re-render the question
             const filteredQuestions = currentFilter === 'all'
                 ? allQuestions
                 : allQuestions.filter(q => q.marks == currentFilter);
             renderQuestions(filteredQuestions);
         }
 
-        // Clear selection
         selection.removeAllRanges();
         highlightMode = false;
         updateHighlightButtons();
@@ -216,7 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const filtered = highlights.filter(h => h.id !== highlightId);
         saveQuestionHighlights(questionId, filtered);
         
-        // Re-render the question
         let filteredQuestions;
         if (currentFilter === 'all') {
             filteredQuestions = allQuestions;
@@ -241,7 +223,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Update sidebar highlight button
         if (toggleHighlightModeBtn) {
             if (highlightMode) {
                 toggleHighlightModeBtn.classList.add('active');
@@ -255,13 +236,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Toggle Highlight Mode from Sidebar
     if (toggleHighlightModeBtn) {
         toggleHighlightModeBtn.addEventListener('click', () => {
             highlightMode = !highlightMode;
             updateHighlightButtons();
             
-            // Update cursor for all answer texts
             document.querySelectorAll('.answer-text').forEach(answerText => {
                 if (highlightMode) {
                     answerText.style.cursor = 'text';
@@ -285,9 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const stored = localStorage.getItem(IMPORTANT_STORAGE_KEY);
         if (!stored) return [];
         const data = JSON.parse(stored);
-        // Handle old format (array of IDs) and new format (array of objects)
         if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
-            // Convert old format to new format
             return data.map(id => ({ id, name: '' }));
         }
         return data;
@@ -320,11 +297,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (index > -1) {
             important.splice(index, 1);
             saveImportantQuestions(important);
-            return false; // Removed
+            return false;
         } else {
             important.push({ id: questionId, name: name });
             saveImportantQuestions(important);
-            return true; // Added
+            return true;
         }
     }
 
@@ -333,8 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return important.some(i => i.id === questionId);
     }
 
-    // Load questions from localStorage (PDF questions) or use mockQuestions as fallback
-    // In production, this would come from actual PDF processing
+    // Load questions
     const storedQuestions = localStorage.getItem('ready2study_pdf_questions');
     if (storedQuestions) {
         try {
@@ -349,214 +325,34 @@ document.addEventListener('DOMContentLoaded', () => {
             allQuestions = mockQuestions;
         }
     } else {
-        // Store mockQuestions in localStorage as PDF questions (for testing)
         allQuestions = mockQuestions;
         localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
     }
 
-    // Initialize - make sure we have questions to display
     if (allQuestions.length === 0) {
         allQuestions = mockQuestions;
     }
     
     console.log('Loaded questions from storage:', allQuestions.length, 'questions');
-    console.log('Questions sample:', allQuestions.slice(0, 2));
     
-    // Display question summary by marks
     displayQuestionSummary();
     
-    // Hide PDF status card - show questions and answers instead
     const pdfStatusCard = document.getElementById('pdfStatusCard');
     if (pdfStatusCard) {
         pdfStatusCard.style.display = 'none';
     }
     
-    // Set view mode to grid - show all questions on same page
     viewMode = 'grid';
     currentQuestionIndex = 0;
     
-    // Initial render - show all questions by default, but in one-by-one view
     const initialFiltered = currentFilter === 'all'
         ? allQuestions
         : currentFilter === 'important'
         ? allQuestions.filter(q => isImportant(q.id))
         : allQuestions.filter(q => q.marks == currentFilter);
     
-    // Render questions on page load in one-by-one view
     renderQuestions(initialFiltered);
     
-    function displayPDFStatusCard() {
-        const pdfUploaded = localStorage.getItem('ready2study_pdf_uploaded');
-        const pdfName = localStorage.getItem('ready2study_pdf_name');
-        const statusCard = document.getElementById('pdfStatusCard');
-        const marksSummary = document.getElementById('marksSummary');
-        const pdfFileName = document.getElementById('pdfFileName');
-        
-        if (pdfUploaded === 'true' && statusCard && marksSummary && allQuestions.length > 0) {
-            statusCard.style.display = 'block';
-            
-            // Display PDF file name if available
-            if (pdfFileName && pdfName) {
-                pdfFileName.textContent = `File: ${pdfName}`;
-            }
-            
-            const summary = {
-                1: allQuestions.filter(q => q.marks === 1).length,
-                2: allQuestions.filter(q => q.marks === 2).length,
-                3: allQuestions.filter(q => q.marks === 3).length,
-                10: allQuestions.filter(q => q.marks === 10).length
-            };
-            
-            marksSummary.innerHTML = `
-                <div style="background: rgba(255,255,255,0.25); padding: 1.25rem; border-radius: 0.75rem; text-align: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">${summary[1]}</div>
-                    <div style="font-size: 1rem; opacity: 0.95; font-weight: 600;">1 Mark Question${summary[1] !== 1 ? 's' : ''}</div>
-                </div>
-                <div style="background: rgba(255,255,255,0.25); padding: 1.25rem; border-radius: 0.75rem; text-align: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">${summary[2]}</div>
-                    <div style="font-size: 1rem; opacity: 0.95; font-weight: 600;">2 Marks Question${summary[2] !== 1 ? 's' : ''}</div>
-                </div>
-                <div style="background: rgba(255,255,255,0.25); padding: 1.25rem; border-radius: 0.75rem; text-align: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">${summary[3]}</div>
-                    <div style="font-size: 1rem; opacity: 0.95; font-weight: 600;">3 Marks Question${summary[3] !== 1 ? 's' : ''}</div>
-                </div>
-                <div style="background: rgba(255,255,255,0.25); padding: 1.25rem; border-radius: 0.75rem; text-align: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">${summary[10]}</div>
-                    <div style="font-size: 1rem; opacity: 0.95; font-weight: 600;">10 Marks Question${summary[10] !== 1 ? 's' : ''}</div>
-                </div>
-            `;
-        } else if (statusCard) {
-            statusCard.style.display = 'none';
-        }
-    }
-    
-    // Initialize view mode toggle
-    const viewModeToggle = document.getElementById('viewModeToggle');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    
-    if (viewModeToggle) {
-        viewModeToggle.addEventListener('click', () => {
-            viewMode = viewMode === 'one-by-one' ? 'grid' : 'one-by-one';
-            currentQuestionIndex = 0;
-            
-            if (viewMode === 'one-by-one') {
-                viewModeToggle.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
-                        <rect x="3" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="14" width="7" height="7"></rect>
-                        <rect x="3" y="14" width="7" height="7"></rect>
-                    </svg>
-                    Grid View
-                `;
-            } else {
-                viewModeToggle.innerHTML = `
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
-                        <line x1="8" y1="6" x2="21" y2="6"></line>
-                        <line x1="8" y1="12" x2="21" y2="12"></line>
-                        <line x1="8" y1="18" x2="21" y2="18"></line>
-                        <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                        <line x1="3" y1="12" x2="3.01" y2="12"></line>
-                        <line x1="3" y1="18" x2="3.01" y2="18"></line>
-                    </svg>
-                    One-by-One View
-                `;
-            }
-            
-            // Re-render with new view mode
-            const filtered = currentFilter === 'all'
-                ? allQuestions
-                : currentFilter === 'important'
-                ? allQuestions.filter(q => isImportant(q.id))
-                : allQuestions.filter(q => q.marks == currentFilter);
-            renderQuestions(filtered);
-        });
-    }
-    
-    // Navigation controls
-    if (prevBtn) {
-        prevBtn.addEventListener('click', () => {
-            if (currentQuestionIndex > 0) {
-                currentQuestionIndex--;
-            } else {
-                currentQuestionIndex = filteredQuestionsList.length - 1;
-            }
-            const filtered = currentFilter === 'all'
-                ? allQuestions
-                : currentFilter === 'important'
-                ? allQuestions.filter(q => isImportant(q.id))
-                : allQuestions.filter(q => q.marks == currentFilter);
-            renderQuestions(filtered);
-        });
-    }
-    
-    if (nextBtn) {
-        nextBtn.addEventListener('click', () => {
-            if (currentQuestionIndex < filteredQuestionsList.length - 1) {
-                currentQuestionIndex++;
-            } else {
-                currentQuestionIndex = 0;
-            }
-            const filtered = currentFilter === 'all'
-                ? allQuestions
-                : currentFilter === 'important'
-                ? allQuestions.filter(q => isImportant(q.id))
-                : allQuestions.filter(q => q.marks == currentFilter);
-            renderQuestions(filtered);
-        });
-    }
-    
-    // Keyboard navigation
-    document.addEventListener('keydown', (e) => {
-        if (viewMode === 'one-by-one') {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                prevBtn?.click();
-            } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                e.preventDefault();
-                nextBtn?.click();
-            }
-        }
-    });
-    
-    function updateProgressIndicator() {
-        const progressEl = document.getElementById('questionProgress');
-        if (progressEl && filteredQuestionsList.length > 0) {
-            const currentQ = filteredQuestionsList[currentQuestionIndex];
-            const markGroup = {
-                1: filteredQuestionsList.filter(q => q.marks === 1),
-                2: filteredQuestionsList.filter(q => q.marks === 2),
-                3: filteredQuestionsList.filter(q => q.marks === 3),
-                10: filteredQuestionsList.filter(q => q.marks === 10)
-            };
-            
-            const sameMarkQuestions = markGroup[currentQ.marks] || [];
-            const indexInGroup = sameMarkQuestions.findIndex(q => q.id === currentQ.id) + 1;
-            
-            progressEl.innerHTML = `
-                <span style="color: var(--primary); font-weight: 700;">Question ${currentQuestionIndex + 1} of ${filteredQuestionsList.length}</span>
-                <span style="margin: 0 0.5rem; color: var(--border);">|</span>
-                <span style="color: var(--text-muted);">${currentQ.marks} Mark${currentQ.marks > 1 ? 's' : ''} - ${indexInGroup} of ${sameMarkQuestions.length}</span>
-            `;
-        }
-    }
-    
-    function updateNavigationControls() {
-        const navControls = document.getElementById('navigationControls');
-        if (navControls) {
-            // Always show navigation controls for one-by-one view
-            if (viewMode === 'one-by-one') {
-                navControls.style.display = 'flex';
-            } else {
-                navControls.style.display = 'none';
-            }
-        }
-    }
-    
-    // Note: Initial render is already done above, viewMode is already set to 'one-by-one'
-    
-    // Function to display question summary
     function displayQuestionSummary() {
         const summary = {
             1: allQuestions.filter(q => q.marks === 1).length,
@@ -565,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
             10: allQuestions.filter(q => q.marks === 10).length
         };
         
-        // Update filter buttons with counts
         document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
             const filter = btn.dataset.filter;
             if (filter === 'all') {
@@ -598,11 +393,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (viewFullPDFBtn) {
         viewFullPDFBtn.addEventListener('click', () => {
-            // Generate full PDF content from questions
             let fullContent = '<div style="max-width: 800px; margin: 0 auto;">';
             fullContent += '<h2 style="color: var(--primary); margin-bottom: 2rem; text-align: center;">Complete Study Material</h2>';
             
-            // Group questions by marks
             const questionsByMarks = {
                 1: allQuestions.filter(q => q.marks === 1),
                 2: allQuestions.filter(q => q.marks === 2),
@@ -610,7 +403,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 10: allQuestions.filter(q => q.marks === 10)
             };
 
-            // Display all questions organized by marks
             [1, 2, 3, 10].forEach(marks => {
                 const questions = questionsByMarks[marks];
                 if (questions.length > 0) {
@@ -652,11 +444,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter Click Handlers
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            // Update UI
             filterBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
-            // Filter Data
             currentFilter = btn.dataset.filter;
             let filtered;
             
@@ -668,28 +458,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 filtered = allQuestions.filter(q => q.marks == currentFilter);
             }
 
-            // Reset to first question when filtering
             currentQuestionIndex = 0;
             renderQuestions(filtered);
         });
     });
 
-    // Initialize: Show all answers by default
     allAnswersVisible = true;
     if (toggleAllBtn) {
         toggleAllBtn.textContent = "Hide All Answers";
     }
 
-    // Toggle All Answers
     if (toggleAllBtn) {
-    toggleAllBtn.addEventListener('click', () => {
-        allAnswersVisible = !allAnswersVisible;
-        toggleAllBtn.textContent = allAnswersVisible ? "Hide All Answers" : "Show All Answers";
+        toggleAllBtn.addEventListener('click', () => {
+            allAnswersVisible = !allAnswersVisible;
+            toggleAllBtn.textContent = allAnswersVisible ? "Hide All Answers" : "Show All Answers";
 
-        const answerSections = document.querySelectorAll('.answer-section');
-        const toggleBtns = document.querySelectorAll('.toggle-answer-btn');
+            const answerSections = document.querySelectorAll('.answer-section');
+            const toggleBtns = document.querySelectorAll('.toggle-answer-btn');
 
-        answerSections.forEach(section => {
+            answerSections.forEach(section => {
                 if (allAnswersVisible) {
                     section.classList.add('visible');
                     section.style.display = 'block';
@@ -697,12 +484,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     section.classList.remove('visible');
                     section.style.display = 'none';
                 }
-        });
+            });
 
-        toggleBtns.forEach(btn => {
-            btn.textContent = allAnswersVisible ? "Hide Answer" : "Show Answer";
+            toggleBtns.forEach(btn => {
+                btn.textContent = allAnswersVisible ? "Hide Answer" : "Show Answer";
+            });
         });
-    });
     }
 
     function renderQuestions(questions) {
@@ -712,33 +499,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         container.innerHTML = '';
-        
-        // Store filtered questions for navigation
         filteredQuestionsList = questions;
         
         console.log('Rendering questions:', questions.length, 'questions');
 
         if (questions.length === 0) {
             if (currentFilter === 'important') {
-                // Show test section even when no important questions
                 container.innerHTML = `
                     <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
                         <h3>No important questions yet.</h3>
                         <p style="margin-top: 1rem;">Mark questions as important to see them here.</p>
                     </div>
                 `;
-                return; // Added: exit after showing empty important state
+                return;
             } else {
-            container.innerHTML = `
-                <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
-                    <h3>No questions found for this category.</h3>
-                </div>
-            `;
-            return;
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                        <h3>No questions found for this category.</h3>
+                    </div>
+                `;
+                return;
+            }
         }
-        } // Added: closing brace for if (questions.length === 0)
 
-        // Group questions by marks for one-by-one view
         const questionsByMarks = {
             1: questions.filter(q => q.marks === 1),
             2: questions.filter(q => q.marks === 2),
@@ -746,41 +529,13 @@ document.addEventListener('DOMContentLoaded', () => {
             10: questions.filter(q => q.marks === 10)
         };
         
-        // For one-by-one view, show only current question
-        let questionsToRender = [];
-        if (viewMode === 'one-by-one' && questions.length > 0) {
-            // Ensure index is within bounds
-            if (currentQuestionIndex >= questions.length) {
-                currentQuestionIndex = 0;
-            }
-            if (currentQuestionIndex < 0) {
-                currentQuestionIndex = questions.length - 1;
-            }
-            // Show only the current question
-            questionsToRender = [questions[currentQuestionIndex]];
-            container.classList.add('one-by-one-view');
-            updateProgressIndicator();
-            updateNavigationControls();
-            
-            console.log(`Displaying question ${currentQuestionIndex + 1} of ${questions.length}:`, questions[currentQuestionIndex].question.substring(0, 50));
-        } else {
-            // Grid view - show all questions
-            questionsToRender = questions;
-            container.classList.remove('one-by-one-view');
-            const progressEl = document.getElementById('questionProgress');
-            const navControls = document.getElementById('navigationControls');
-            if (progressEl) progressEl.textContent = '';
-            if (navControls) navControls.style.display = 'none';
-        }
-
-        // Ensure container is visible
+        let questionsToRender = questions;
+        
         if (container) {
             container.style.display = 'flex';
             container.style.flexDirection = 'column';
             container.style.visibility = 'visible';
         }
-        
-        console.log('About to render', questionsToRender.length, 'questions');
         
         questionsToRender.forEach((q, index) => {
             const card = document.createElement('div');
@@ -789,13 +544,9 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.visibility = 'visible';
             card.style.opacity = '1';
 
-            // Format answer with line breaks if needed
             const formattedAnswer = q.answer.replace(/\n/g, '<br>');
-
-            // Image HTML if exists
             const imageHtml = q.image ? `<div class="answer-image-container"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image"></div>` : '';
             
-            // Media HTML if exists (user-uploaded) - displayed on the side
             const questionMedia = getQuestionMedia(q.id);
             const mediaHtml = questionMedia ? `
                 <div class="question-media-container">
@@ -807,9 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ` : '';
 
             const isImportantQuestion = isImportant(q.id);
-            const importantName = isImportantQuestion ? getImportantQuestionName(q.id) : '';
 
-            // Get the mark badge color
             const markColors = {
                 1: '#3b82f6',
                 2: '#10b981',
@@ -817,14 +566,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 10: '#ef4444'
             };
             const markColor = markColors[q.marks] || '#6366f1';
-
-            // Get question number in the list
             const questionNumber = index + 1;
             
             card.innerHTML = `
-                <!-- Question and Answer Display with Mark Badge -->
                 <div style="margin-bottom: 1rem;">
-                    <!-- Mark Badge -->
                     <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
                         <span style="background: ${markColor}; color: white; padding: 0.4rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.875rem;">
                             ${q.marks} Mark${q.marks > 1 ? 's' : ''}
@@ -834,14 +579,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         </span>
                     </div>
                     
-                    <!-- Question -->
                     <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.6; padding: 1.25rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid ${markColor}; margin-bottom: 1rem;">
                         ${q.question}
                     </div>
                     
                     ${mediaHtml}
                     
-                    <!-- Answer -->
                     <div class="answer-section visible" style="display: block !important;">
                         <div style="font-size: 1.1rem; color: #1e293b; line-height: 1.8; padding: 1.25rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981;">
                             <span style="color: #10b981; font-weight: 700;">Answer:</span> 
@@ -853,7 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                         
-                <!-- Answer Controls -->
                 <div class="answer-controls" style="padding-top: 1rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-start; gap: 0.5rem; flex-wrap: wrap;">
                     <button class="btn-icon chat-question-btn" title="Ask AI to clarify doubt" data-question-id="${q.id}" style="background: #dbeafe; color: #1e40af; border: 1px solid #60a5fa; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
@@ -878,77 +620,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // Get answer text element for highlight functionality
             const answerText = card.querySelector('.answer-text');
             const answerSection = card.querySelector('.answer-section');
             
-            // Ensure answer is ALWAYS visible by default for reading
             if (answerSection) {
                 answerSection.classList.add('visible');
                 answerSection.style.display = 'block';
                 answerSection.style.visibility = 'visible';
             }
             
-            // Apply saved highlights - always show them
             if (answerText) {
                 applyHighlights(q.id, answerText);
             }
             
             container.appendChild(card);
-            console.log('Question card appended:', q.question.substring(0, 50) + '...');
         });
 
-        // Add chat button handlers for each question (Clarify Doubt)
+        // Add button handlers
+        addButtonHandlers();
+    }
+
+    function addButtonHandlers() {
+        // Chat Doubt button handlers for each question
         document.querySelectorAll('.chat-question-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
                 const question = allQuestions.find(q => q.id === questionId);
-                if (!question) return;
-
-                currentChatQuestionId = questionId;
-                if (chatHeaderTitle) {
-                    chatHeaderTitle.textContent = `Clarify Doubt: Q${questionId}`;
-                }
-
-                if (chatMessages) {
-                    chatMessages.innerHTML = `
-                        <div class="chat-message bot-message">
-                            <div class="message-content">
-                                <p>Hi! I'm here to help you understand this question. Ask me anything specific!</p>
+                if (question) {
+                    currentChatQuestionId = questionId;
+                    if (chatHeaderTitle) chatHeaderTitle.textContent = `Clarify Doubt: Q${questionId}`;
+                    
+                    if (chatMessages) {
+                        chatMessages.innerHTML = `
+                            <div class="chat-message bot-message">
+                                <div class="message-content">
+                                    <p>Hi! I'm here to help you understand this question better. Let me explain it clearly for you.</p>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
+                    
+                    chatModal.classList.add('active');
+                    if (chatInput) chatInput.focus();
+                    
+                    // Auto-generate initial AI response
+                    setTimeout(() => {
+                        const briefExplanation = question.question.substring(0, 100);
+                        const answerPreview = question.answer.length > 150 
+                            ? question.answer.substring(0, 150) + '...' 
+                            : question.answer;
+                        
+                        const aiResponse = `**Question Analysis:**\n\n${briefExplanation}\n\n**Key Points to Understand:**\n- This is a ${question.marks}-mark question\n- It tests your knowledge on specific concepts\n\n**Brief Explanation:**\n${answerPreview}\n\nAsk me anything specific about this question and I'll clarify it for you!`;
+                        
+                        addMessage(aiResponse, 'bot');
+                    }, 500);
                 }
-
-                chatModal.classList.add('active');
-                if (chatInput) chatInput.focus();
-
-                setTimeout(() => {
-                    const answerPreview = question.answer.length > 200
-                        ? question.answer.substring(0, 200) + '...'
-                        : question.answer;
-                    const aiResponse = `**Question:** ${question.question}\n\n**Quick Explanation:**\n${answerPreview}\n\nTell me what part confuses you and I'll break it down for you!`;
-                    addMessage(aiResponse, 'bot');
-                }, 400);
             });
         });
 
-        // Add attach media button handlers for each question
-        document.querySelectorAll('.attach-media-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const questionId = parseInt(btn.getAttribute('data-question-id'));
-                openMediaModal(questionId);
-            });
-        });
-
-        // Add highlight button handlers
+        // Highlight button handlers
         document.querySelectorAll('.highlight-mode-btn').forEach(btn => {
             const questionId = parseInt(btn.getAttribute('data-question-id'));
             const answerText = document.querySelector(`.answer-text[data-question-id="${questionId}"]`);
             
-            // Store highlight state per question
             btn.dataset.highlightEnabled = 'false';
             
             btn.addEventListener('click', (e) => {
@@ -958,7 +693,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const isEnabled = btn.dataset.highlightEnabled === 'true';
                     
                     if (!isEnabled) {
-                        // Enable highlight mode
                         btn.dataset.highlightEnabled = 'true';
                         btn.style.background = '#22c55e';
                         btn.style.color = 'white';
@@ -967,7 +701,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         answerText.style.userSelect = 'text';
                         answerText.style.background = '#fefce8';
                     } else {
-                        // Disable highlight mode
                         btn.dataset.highlightEnabled = 'false';
                         btn.style.background = '#fef9c3';
                         btn.style.color = '#854d0e';
@@ -979,20 +712,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
             
-            // Add mouseup listener for highlighting (only when enabled)
             if (answerText) {
                 answerText.addEventListener('mouseup', () => {
                     if (btn.dataset.highlightEnabled === 'true') {
-                        const success = highlightSelectedText(questionId, answerText);
-                        if (success) {
-                            // Keep highlight mode on for multiple highlights
-                        }
+                        highlightSelectedText(questionId, answerText);
                     }
                 });
             }
         });
 
-        // Add unhighlight button handlers
+        // Unhighlight button handlers
         document.querySelectorAll('.unhighlight-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1014,14 +743,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Add listen button handlers (text-to-speech)
+        // Listen button handlers (text-to-speech)
         document.querySelectorAll('.listen-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
                 const question = allQuestions.find(q => q.id === questionId);
                 if (question && 'speechSynthesis' in window) {
-                    // Stop any ongoing speech
                     window.speechSynthesis.cancel();
                     
                     const text = `Question: ${question.question}. Answer: ${question.answer}`;
@@ -1046,14 +774,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Add important button handlers
+        // Important button handlers
         document.querySelectorAll('.important-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
                 const isNowImportant = toggleImportant(questionId);
                 
-                // Update button appearance
                 if (isNowImportant) {
                     btn.classList.add('active');
                     btn.style.background = '#fef2f2';
@@ -1066,7 +793,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.querySelector('svg').setAttribute('fill', 'none');
                 }
                 
-                // Update sidebar count
                 displayQuestionSummary();
             });
         });
@@ -1099,7 +825,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentMediaQuestionId = null;
     const mediaModal = document.getElementById('mediaModal');
     const mediaClose = document.getElementById('mediaClose');
-    const mediaUploadZone = document.getElementById('mediaUploadZone');
     const mediaFileInput = document.getElementById('mediaFileInput');
     const mediaPreview = document.getElementById('mediaPreview');
     const mediaPreviewContent = document.getElementById('mediaPreviewContent');
@@ -1107,24 +832,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveMediaBtn = document.getElementById('saveMediaBtn');
     let currentMediaFile = null;
 
-    // Open media modal for specific question
-    function openMediaModal(questionId) {
-        currentMediaQuestionId = questionId;
-        const existingMedia = getQuestionMedia(questionId);
-        
-        if (existingMedia) {
-            mediaPreviewContent.innerHTML = existingMedia.type === 'image'
-                ? `<img src="${existingMedia.data}" alt="Question media" style="max-width: 100%; border-radius: var(--radius-lg);">`
-                : `<video src="${existingMedia.data}" controls style="max-width: 100%; border-radius: var(--radius-lg);"></video>`;
-            mediaPreview.style.display = 'block';
-        } else {
-            mediaPreview.style.display = 'none';
-        }
-        
-        mediaModal.classList.add('active');
-    }
-
-    // Close media modal
     if (mediaClose) {
         mediaClose.addEventListener('click', () => {
             mediaModal.classList.remove('active');
@@ -1135,7 +842,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Close on outside click
     if (mediaModal) {
         mediaModal.addEventListener('click', (e) => {
             if (e.target === mediaModal) {
@@ -1148,23 +854,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Handle file selection
     if (mediaFileInput) {
         mediaFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Validate file type
             if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
                 alert('Please upload an image or video file.');
                 return;
             }
 
-            // Validate file size (max 5MB for images, 20MB for videos)
             const maxSize = file.type.startsWith('image/') ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
             if (file.size > maxSize) {
                 alert(`File size exceeds ${file.type.startsWith('image/') ? '5MB' : '20MB'}. Please upload a smaller file.`);
-                    return;
+                return;
             }
 
             currentMediaFile = file;
@@ -1180,12 +883,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Remove media
     if (removeMediaBtn) {
         removeMediaBtn.addEventListener('click', () => {
             if (currentMediaQuestionId) {
                 removeQuestionMedia(currentMediaQuestionId);
-                // Re-render questions
                 const filteredQuestions = currentFilter === 'all'
                     ? allQuestions
                     : currentFilter === 'important'
@@ -1199,7 +900,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Save media
     if (saveMediaBtn) {
         saveMediaBtn.addEventListener('click', () => {
             if (!currentMediaQuestionId) return;
@@ -1214,7 +914,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         filename: currentMediaFile.name
                     });
                     
-                    // Re-render questions
                     const filteredQuestions = currentFilter === 'all'
                         ? allQuestions
                         : currentFilter === 'important'
@@ -1246,56 +945,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatHeaderTitle = document.getElementById('chatHeaderTitle');
     const chatWelcomeMessage = document.getElementById('chatWelcomeMessage');
 
-    // Open chat for specific question
-    function openChatForQuestion(questionId) {
-        currentChatQuestionId = questionId;
-        const question = allQuestions.find(q => q.id === questionId);
-        
-        if (question) {
-            chatHeaderTitle.textContent = `Chat: Question ${questionId}`;
-            chatWelcomeMessage.textContent = `I'm here to help you with this question: "${question.question.substring(0, 100)}${question.question.length > 100 ? '...' : ''}". What would you like to know?`;
-        }
-        
-        // Clear previous messages except welcome
-        chatMessages.innerHTML = `
-            <div class="chat-message bot-message">
-                <div class="message-content">
-                    <p id="chatWelcomeMessage">${chatWelcomeMessage.textContent}</p>
-                </div>
-            </div>
-        `;
-        
-        chatModal.classList.add('active');
-        chatInput.focus();
-    }
-
-    // Open general chat
     function openGeneralChat() {
         currentChatQuestionId = null;
-        chatHeaderTitle.textContent = 'Chat About Questions';
-        chatWelcomeMessage.textContent = 'Hello! I\'m here to help you with questions. Ask me anything!';
+        if (chatHeaderTitle) chatHeaderTitle.textContent = 'Chat About Questions';
+        if (chatWelcomeMessage) chatWelcomeMessage.textContent = 'Hello! I\'m here to help you with questions. Ask me anything!';
         
-        // Clear previous messages except welcome
-        chatMessages.innerHTML = `
-            <div class="chat-message bot-message">
-                <div class="message-content">
-                    <p id="chatWelcomeMessage">${chatWelcomeMessage.textContent}</p>
+        if (chatMessages) {
+            chatMessages.innerHTML = `
+                <div class="chat-message bot-message">
+                    <div class="message-content">
+                        <p id="chatWelcomeMessage">Hello! I'm here to help you with questions. Ask me anything!</p>
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
         
         chatModal.classList.add('active');
-        chatInput.focus();
+        if (chatInput) chatInput.focus();
     }
 
-    // Open chat modal
     if (chatButton) {
         chatButton.addEventListener('click', () => {
             openGeneralChat();
         });
     }
 
-    // Close chat modal
     if (chatClose) {
         chatClose.addEventListener('click', () => {
             chatModal.classList.remove('active');
@@ -1303,7 +977,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Close on outside click
     if (chatModal) {
         chatModal.addEventListener('click', (e) => {
             if (e.target === chatModal) {
@@ -1313,7 +986,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Send message function
     function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
@@ -1326,6 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
             
             if (question) {
+                // Question-specific AI responses
                 if (message.toLowerCase().includes('explain') || message.toLowerCase().includes('understand')) {
                     botResponse = `**Detailed Explanation:**\n\n${question.question}\n\n**Answer:**\n${question.answer}\n\nDoes this clarify your doubt? Feel free to ask for specific parts if you need further clarification!`;
                 } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution')) {
@@ -1345,13 +1018,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     botResponse = `**Question:** ${question.question}\n\n**Analysis:**\nYou asked: "${message}"\n\n**Answer:**\n${question.answer}\n\nLet me know if you need clarification on any part!`;
                 }
             } else {
+                // General chat responses when no specific question is selected
                 if (message.toLowerCase().includes('all questions') || message.toLowerCase().includes('questions')) {
-                    botResponse = `You have ${allQuestions.length} questions in total. You can filter them by marks (1, 2, 3, or 10 marks), view important questions, or click "Clarify Doubt" on any question for detailed help. Which question would you like to explore?`;
+                    botResponse = `You have ${allQuestions.length} questions in total. You can:\n- Filter by marks (1, 2, 3, or 10 marks)\n- View important questions you've saved\n- Click "Clarify Doubt" on any question to chat about it\n\nWhich question would you like to explore?`;
                 } else if (message.toLowerCase().includes('important')) {
                     const importantCount = getImportantQuestions().length;
                     botResponse = `You have ${importantCount} important question${importantCount !== 1 ? 's' : ''} marked. These are the ones you found challenging or want to review later. Use "Clarify Doubt" button to get help on any of them!`;
                 } else if (message.toLowerCase().includes('test') || message.toLowerCase().includes('practice')) {
-                    botResponse = `**Practice Test Details:**\n- Total Marks: 20\n- Time: 60 minutes\n- Pattern: 1×2 marks, 2×1 marks, 2×3 marks, 1×10 marks\n- Text/Voice Input available\n\nGo to dashboard and click "Start Practice Test" when ready. Good luck!`;
+                    botResponse = `**Practice Test Details:**\n- Total Marks: 20\n- Time: 60 minutes\n- Pattern: 1×2 marks, 2×1 marks, 2×3 marks, 1×10 marks\n- Text/Voice Input: Available\n\nGo to dashboard and click "Start Practice Test" when ready. Good luck!`;
                 } else if (message.toLowerCase().includes('help') || message.toLowerCase().includes('how')) {
                     botResponse = `**How I Can Help You:**\n✓ Clarify difficult questions\n✓ Explain concepts in simple terms\n✓ Provide hints and tips\n✓ Give real-world examples\n✓ Answer test-related questions\n\nClick "Clarify Doubt" on any question card, and I'll help you understand it better!`;
                 } else {
@@ -1363,15 +1037,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     }
 
-    // Add message to chat
     function addMessage(text, type) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${type}-message`;
         
-        // Format text with line breaks and bold text
         let formattedText = text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold text
-            .replace(/\n/g, '<br>'); // Line breaks
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
         
         messageDiv.innerHTML = `
             <div class="message-content">
@@ -1382,12 +1054,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    // Send on button click
     if (chatSend) {
         chatSend.addEventListener('click', sendMessage);
     }
 
-    // Send on Enter key
     if (chatInput) {
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -1405,7 +1075,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function exportQuestionsToPDF() {
-        // Check if jsPDF is available
         if (typeof window.jspdf === 'undefined') {
             alert('PDF library not loaded. Please refresh the page and try again.');
             return;
@@ -1414,26 +1083,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         
-        // Get user data for header
         const userData = JSON.parse(localStorage.getItem('ready2study_user')) || {};
         const userName = userData.name || 'Student';
         const course = userData.course || '';
         const college = userData.college || '';
         
-        // Get PDF file info
         const pdfData = JSON.parse(localStorage.getItem('ready2study_pdf')) || {};
         const pdfName = pdfData.name || 'Study Material';
         
-        // Page settings
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const margin = 20;
         const maxWidth = pageWidth - (margin * 2);
         let yPos = margin;
-        const lineHeight = 7;
-        const spacing = 5;
         
-        // Helper function to add text with word wrap
         function addText(text, x, y, maxWidth, fontSize = 11, isBold = false) {
             doc.setFontSize(fontSize);
             doc.setFont('helvetica', isBold ? 'bold' : 'normal');
@@ -1442,7 +1105,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return lines.length * (fontSize * 0.4);
         }
         
-        // Helper function to check if we need a new page
         function checkNewPage(requiredSpace) {
             if (yPos + requiredSpace > pageHeight - margin) {
                 doc.addPage();
@@ -1455,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Title Page
         doc.setFontSize(24);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(99, 102, 241); // Primary color
+        doc.setTextColor(99, 102, 241);
         doc.text('Ready2Study', pageWidth / 2, yPos, { align: 'center' });
         yPos += 15;
         
@@ -1485,7 +1147,6 @@ document.addEventListener('DOMContentLoaded', () => {
         doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos, { align: 'center' });
         yPos += 20;
         
-        // Group questions by marks
         const questionsByMarks = {
             1: allQuestions.filter(q => q.marks === 1),
             2: allQuestions.filter(q => q.marks === 2),
@@ -1493,75 +1154,59 @@ document.addEventListener('DOMContentLoaded', () => {
             10: allQuestions.filter(q => q.marks === 10)
         };
         
-        // Add questions organized by marks
         [1, 2, 3, 10].forEach(marks => {
             const questions = questionsByMarks[marks];
             if (questions.length === 0) return;
             
-            // Add new page for each section
             if (yPos > margin + 20) {
                 doc.addPage();
                 yPos = margin;
             }
             
-            // Section header
             doc.setFontSize(16);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(99, 102, 241);
             yPos += addText(`${marks} Mark${marks > 1 ? 's' : ''} Questions`, margin, yPos, maxWidth, 16, true);
-            yPos += spacing * 2;
+            yPos += 10;
             
-            // Add each question
             questions.forEach((q, index) => {
                 checkNewPage(30);
                 
-                // Question number and text
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(0, 0, 0);
                 const questionText = `Q${index + 1}: ${q.question}`;
                 yPos += addText(questionText, margin, yPos, maxWidth, 12, true);
-                yPos += spacing;
+                yPos += 5;
                 
-                // Exam date badge
-                doc.setFontSize(9);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(100, 100, 100);
-                yPos += addText(`Exam Date: ${q.examDate}`, margin, yPos, maxWidth, 9, false);
-                yPos += spacing;
-                
-                // Answer label
                 doc.setFontSize(11);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(0, 0, 0);
                 yPos += addText('Answer:', margin, yPos, maxWidth, 11, true);
-                yPos += spacing / 2;
+                yPos += 2.5;
                 
-                // Answer text
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(0, 0, 0);
-                // Clean answer text (remove markdown formatting)
                 const cleanAnswer = q.answer
-                    .replace(/\*\*/g, '') // Remove bold markers
-                    .replace(/\n/g, ' ') // Replace newlines with spaces
+                    .replace(/\*\*/g, '')
+                    .replace(/\n/g, ' ')
                     .trim();
                 yPos += addText(cleanAnswer, margin, yPos, maxWidth, 10, false);
-                yPos += spacing * 2;
+                yPos += 10;
                 
-                // Add separator line
                 if (index < questions.length - 1) {
                     doc.setDrawColor(200, 200, 200);
                     doc.line(margin, yPos, pageWidth - margin, yPos);
-                    yPos += spacing;
+                    yPos += 5;
                 }
             });
             
-            yPos += spacing;
+            yPos += 5;
         });
         
-        // Save the PDF
         const fileName = `Ready2Study_Questions_${new Date().toISOString().split('T')[0]}.pdf`;
         doc.save(fileName);
     }
 });
+

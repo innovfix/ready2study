@@ -1,0 +1,517 @@
+@extends('layouts.app')
+
+@section('title', 'Test - Ready2Study')
+
+@push('styles')
+<style>
+    .test-container {
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 2rem;
+    }
+
+    .test-question-card {
+        background: white;
+        border-radius: var(--radius-lg);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border);
+        min-height: 400px;
+    }
+
+    .test-header {
+        background: white;
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .test-info {
+        display: flex;
+        gap: 2rem;
+        align-items: center;
+    }
+
+    .timer {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary);
+    }
+
+    .question-number {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .question-marks {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: var(--gradient-primary);
+        color: white;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+
+    .answer-input-container {
+        margin-top: 1.5rem;
+    }
+
+    .answer-textarea {
+        width: 100%;
+        min-height: 150px;
+        padding: 1rem;
+        border: 2px solid var(--border);
+        border-radius: var(--radius-lg);
+        font-family: inherit;
+        font-size: 1rem;
+        resize: vertical;
+        transition: all 0.2s;
+    }
+
+    .answer-textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .input-mode-selector {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        background: #f8fafc;
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+    }
+
+    .mode-btn {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        border: 2px solid var(--border);
+        border-radius: 0.5rem;
+        background: white;
+        color: var(--text-main);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .mode-btn:hover {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+
+    .mode-btn.active {
+        background: var(--gradient-primary);
+        color: white;
+        border-color: var(--primary);
+    }
+
+    .voice-controls {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        align-items: center;
+    }
+
+    .voice-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: white;
+        border: 2px solid var(--primary);
+        border-radius: 0.5rem;
+        color: var(--primary);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .voice-btn:hover {
+        background: var(--primary);
+        color: white;
+    }
+
+    .voice-btn.recording {
+        background: #fee2e2;
+        border-color: #f43f5e;
+        color: #f43f5e;
+        animation: pulse 1.5s infinite;
+    }
+
+    .answer-textarea.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f1f5f9;
+    }
+
+    .voice-display {
+        min-height: 150px;
+        padding: 1rem;
+        border: 2px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: #f8fafc;
+        font-family: inherit;
+        font-size: 1rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+
+    .test-navigation {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid var(--border);
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: var(--gradient-primary);
+        transition: width 0.3s ease;
+    }
+
+    .submit-test-btn {
+        background: var(--gradient-primary);
+        color: white;
+        padding: 1rem 2rem;
+        border: none;
+        border-radius: 0.5rem;
+        font-weight: 700;
+        font-size: 1rem;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        transition: all 0.2s;
+    }
+
+    .submit-test-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.5);
+    }
+
+    .voice-status {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        font-style: italic;
+    }
+
+    .answer-editable {
+        outline: none;
+    }
+
+    .answer-editable:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .answer-editable:empty:before {
+        content: attr(placeholder);
+        color: #94a3b8;
+        pointer-events: none;
+    }
+
+    .user-highlight {
+        background: linear-gradient(120deg, #fef08a 0%, #fde047 100%);
+        padding: 2px 4px;
+        border-radius: 3px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .user-highlight:hover {
+        background: linear-gradient(120deg, #fde047 0%, #facc15 100%);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    .highlight-mode-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .input-mode-text .answer-textarea {
+        display: block;
+    }
+
+    .input-mode-text .voice-controls {
+        display: none;
+    }
+
+    .input-mode-voice .answer-textarea {
+        display: none;
+    }
+
+    .input-mode-voice .voice-controls {
+        display: flex;
+    }
+
+    /* Chat Button */
+    .chat-button {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: var(--gradient-primary);
+        color: white;
+        border: none;
+        cursor: pointer;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: all 0.3s ease;
+    }
+
+    .chat-button:hover {
+        transform: scale(1.1);
+        box-shadow: var(--shadow-glow);
+    }
+
+    /* Chat Modal */
+    .chat-modal {
+        display: none;
+        position: fixed;
+        bottom: 90px;
+        right: 2rem;
+        width: 400px;
+        height: 600px;
+        background: white;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        z-index: 1001;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-modal.active {
+        display: flex;
+    }
+
+    .chat-modal-content {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .chat-header {
+        padding: 1.25rem;
+        background: var(--gradient-primary);
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .chat-header h3 {
+        margin: 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+    }
+
+    .chat-close {
+        background: transparent;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 0.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.25rem;
+        transition: background 0.2s;
+    }
+
+    .chat-close:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        background: #f8fafc;
+    }
+
+    .chat-message {
+        display: flex;
+        flex-direction: column;
+        max-width: 80%;
+    }
+
+    .chat-message.user-message {
+        align-self: flex-end;
+    }
+
+    .chat-message.bot-message {
+        align-self: flex-start;
+    }
+
+    .message-content {
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-lg);
+        background: white;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .user-message .message-content {
+        background: var(--gradient-primary);
+        color: white;
+    }
+
+    .message-content p {
+        margin: 0;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    .chat-input-container {
+        padding: 1rem;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 0.5rem;
+        background: white;
+    }
+
+    .chat-input {
+        flex: 1;
+        padding: 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        font-size: 0.875rem;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .chat-input:focus {
+        border-color: var(--primary);
+    }
+
+    .chat-send {
+        padding: 0.75rem 1rem;
+        background: var(--gradient-primary);
+        color: white;
+        border: none;
+        border-radius: var(--radius-lg);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s;
+    }
+
+    .chat-send:hover {
+        transform: scale(1.05);
+    }
+</style>
+@endpush
+
+@section('content')
+<div class="test-container">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 900; margin-bottom: 0.5rem; background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Practice Test</h1>
+        <p style="color: var(--text-muted); font-size: 1.1rem;">Test your knowledge with questions from your uploaded PDF</p>
+    </div>
+    <div class="test-header">
+        <div class="test-info">
+            <div>
+                <h2 style="margin: 0; color: var(--text-main);">Test Details</h2>
+                <p style="margin: 0.5rem 0 0 0; color: var(--text-muted); font-size: 0.875rem;">Total: 20 Marks • Pattern: 1×2, 2×1, 2×3, 1×10</p>
+            </div>
+        </div>
+        <div class="timer" id="timer">60:00</div>
+    </div>
+
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressBar"></div>
+    </div>
+
+    <div id="testQuestionsContainer" style="min-height: 400px;">
+        <!-- Questions will be injected here -->
+    </div>
+
+    <div class="test-navigation">
+        <button class="btn btn-secondary" id="prevBtn" style="display: none;">Previous</button>
+        <button class="btn btn-secondary" id="nextBtn">Next</button>
+        <button class="submit-test-btn" id="submitBtn" style="display: none;">Submit Test</button>
+    </div>
+</div>
+
+<!-- Chat Button -->
+<button class="chat-button" id="chatButton" title="Chat about questions">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+    </svg>
+</button>
+
+<!-- Chat Modal -->
+<div class="chat-modal" id="chatModal">
+    <div class="chat-modal-content">
+        <div class="chat-header">
+            <h3>Chat About Questions</h3>
+            <button class="chat-close" id="chatClose">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-message bot-message">
+                <div class="message-content">
+                    <p>Hello! I'm here to help you with questions. Ask me anything about the test questions!</p>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-container">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Type your question here...">
+            <button class="chat-send" id="chatSend">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script src="{{ asset('js/test.js') }}"></script>
+@endpush
+

@@ -4,9 +4,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Student Info
     const userData = JSON.parse(localStorage.getItem('ready2study_user'));
     if (userData) {
-        document.getElementById('studentHeaderInfo').style.display = 'block';
-        document.getElementById('headerName').textContent = userData.name;
-        document.getElementById('headerDetails').textContent = `${userData.course} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college}`;
+        const headerInfo = document.getElementById('studentHeaderInfo');
+        const headerName = document.getElementById('headerName');
+        const headerDetails = document.getElementById('headerDetails');
+        
+        if (headerInfo) headerInfo.style.display = 'block';
+        if (headerName) headerName.textContent = userData.name;
+        if (headerDetails) headerDetails.textContent = `${userData.course} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college}`;
     }
 
     function getOrdinal(n) {
@@ -26,15 +30,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let testQuestions = [];
     let currentQuestionIndex = 0;
     let userAnswers = {};
-    let inputModes = {}; // Store input mode for each question (text/voice)
-    let userAnswerHighlights = {}; // Store highlights for user answers
-    let highlightMode = {}; // Track highlight mode per question
+    let inputModes = {};
+    let userAnswerHighlights = {};
+    let highlightMode = {};
     let timeRemaining = 60 * 60; // 60 minutes in seconds
     let timerInterval = null;
     let recognition = null;
     let isRecording = false;
 
-    // Highlight storage key for user answers
     const USER_ANSWER_HIGHLIGHTS_KEY = 'ready2study_user_answer_highlights';
 
     // Initialize Speech Recognition
@@ -63,13 +66,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const newAnswer = currentAnswer + finalTranscript;
             userAnswers[currentQuestionId] = newAnswer;
             
-            // Update editable div and textarea
             const editableDiv = document.getElementById(`answer-editable-${currentQuestionId}`);
             const textarea = document.getElementById(`answer-${currentQuestionId}`);
             
             if (editableDiv) {
                 editableDiv.textContent = newAnswer + (interimTranscript ? ' ' + interimTranscript : '');
-                // Reapply highlights after updating text
                 applyUserAnswerHighlights(currentQuestionId, editableDiv);
             }
             
@@ -77,7 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 textarea.value = newAnswer;
             }
             
-            // Update voice display
             const voiceDisplay = document.getElementById(`voice-display-${currentQuestionId}`);
             if (voiceDisplay) {
                 voiceDisplay.textContent = newAnswer + (interimTranscript ? ' ' + interimTranscript : '');
@@ -91,7 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         recognition.onend = () => {
             if (isRecording) {
-                // Restart if still recording
                 try {
                     recognition.start();
                 } catch (e) {
@@ -106,12 +105,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function selectTestQuestions() {
         testQuestions = [];
         
-        // Get questions from uploaded PDF or use mock data
         const pdfQuestionsKey = 'ready2study_pdf_questions';
         const storedPDFQuestions = localStorage.getItem(pdfQuestionsKey);
         let availableQuestions = [];
         
-        // Check if mockQuestions is available (from mockData.js)
         if (typeof mockQuestions !== 'undefined' && Array.isArray(mockQuestions)) {
             availableQuestions = mockQuestions;
         }
@@ -128,16 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // If no questions available, show error
         if (availableQuestions.length === 0) {
             console.error('No questions available for test');
             return;
-        }
-        
-        // Check if we have enough questions for the pattern
-        const requiredQuestions = testPattern.reduce((sum, p) => sum + p.count, 0);
-        if (availableQuestions.length < requiredQuestions) {
-            console.warn(`Not enough questions available. Need at least ${requiredQuestions} questions, but only ${availableQuestions.length} found.`);
         }
         
         console.log('Available questions:', availableQuestions.length);
@@ -149,23 +139,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn(`Not enough ${pattern.marks}-mark questions. Need ${pattern.count}, found ${questionsByMarks.length}`);
             }
             
-            // Shuffle and take required count
             const shuffled = questionsByMarks.sort(() => Math.random() - 0.5);
             const selected = shuffled.slice(0, Math.min(pattern.count, questionsByMarks.length));
             testQuestions.push(...selected);
         });
 
-        // Shuffle all questions
         testQuestions = testQuestions.sort(() => Math.random() - 0.5);
         
-        // Initialize user answers and input modes
         testQuestions.forEach(q => {
             userAnswers[q.id] = '';
-            inputModes[q.id] = 'text'; // Default to text mode
+            inputModes[q.id] = 'text';
             highlightMode[q.id] = false;
         });
 
-        // Load saved highlights
         const savedHighlights = localStorage.getItem(USER_ANSWER_HIGHLIGHTS_KEY);
         if (savedHighlights) {
             userAnswerHighlights = JSON.parse(savedHighlights);
@@ -191,13 +177,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const questionCard = document.createElement('div');
             questionCard.className = 'test-question-card';
             questionCard.id = `question-${index}`;
-            // Initially show first question, hide others
             if (index === 0) {
                 questionCard.style.display = 'block';
             } else {
                 questionCard.style.display = 'none';
             }
-            questionCard.style.minHeight = '400px'; // Ensure questions are visible
+            questionCard.style.minHeight = '400px';
 
             const currentMode = inputModes[q.id] || 'text';
             questionCard.className = `test-question-card input-mode-${currentMode}`;
@@ -294,10 +279,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.execCommand('insertText', false, text);
                 });
 
-                // Apply saved highlights
                 applyUserAnswerHighlights(q.id, editableDiv);
 
-                // Highlight mode mouseup handler
                 editableDiv.addEventListener('mouseup', () => {
                     if (highlightMode[q.id]) {
                         setTimeout(() => {
@@ -331,7 +314,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (questionCard) {
             questionCard.className = `test-question-card input-mode-${mode}`;
             const editableDiv = document.getElementById(`answer-editable-${questionId}`);
-            const textarea = document.getElementById(`answer-${questionId}`);
             const modeBtns = questionCard.querySelectorAll('.mode-btn');
             
             modeBtns.forEach(btn => {
@@ -347,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     editableDiv.style.cursor = 'not-allowed';
                     editableDiv.style.background = '#f1f5f9';
                 }
-                stopRecording(); // Stop any ongoing recording
+                stopRecording();
             } else {
                 if (editableDiv) {
                     editableDiv.contentEditable = 'true';
@@ -356,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     editableDiv.style.cursor = '';
                     editableDiv.style.background = '';
                 }
-                stopRecording(); // Stop any ongoing recording
+                stopRecording();
             }
         }
     };
@@ -382,7 +364,8 @@ document.addEventListener('DOMContentLoaded', () => {
             recognition.start();
             isRecording = true;
             updateVoiceButton(questionId);
-            document.getElementById(`voice-status-${questionId}`).textContent = 'Listening...';
+            const voiceStatus = document.getElementById(`voice-status-${questionId}`);
+            if (voiceStatus) voiceStatus.textContent = 'Listening...';
         } catch (e) {
             console.error('Error starting recognition:', e);
         }
@@ -438,7 +421,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showQuestion(index) {
-        // Stop recording when switching questions
         stopRecording();
         
         document.querySelectorAll('.test-question-card').forEach((card, i) => {
@@ -446,21 +428,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         currentQuestionIndex = index;
         
-        // Update input mode display for current question
         const currentQuestion = testQuestions[index];
         const currentMode = inputModes[currentQuestion.id] || 'text';
         const questionCard = document.getElementById(`question-${index}`);
         if (questionCard) {
             questionCard.className = `test-question-card input-mode-${currentMode}`;
-            const textarea = document.getElementById(`answer-${currentQuestion.id}`);
-            if (textarea) {
-                textarea.disabled = currentMode === 'voice';
-                if (currentMode === 'voice') {
-                    textarea.classList.add('disabled');
-                } else {
-                    textarea.classList.remove('disabled');
-                }
-            }
         }
         
         updateNavigation();
@@ -483,11 +455,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTimer() {
         const minutes = Math.floor(timeRemaining / 60);
         const seconds = timeRemaining % 60;
-        document.getElementById('timer').textContent = 
-            `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        
-        if (timeRemaining <= 300) { // 5 minutes
-            document.getElementById('timer').style.color = '#f43f5e';
+        const timerEl = document.getElementById('timer');
+        if (timerEl) {
+            timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            
+            if (timeRemaining <= 300) {
+                timerEl.style.color = '#f43f5e';
+            }
         }
     }
 
@@ -497,11 +471,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return { score: 0, feedback: 'No answer provided' };
         }
 
-        // Normalize answers (lowercase, remove extra spaces)
         const normalizedUser = userAnswer.toLowerCase().trim().replace(/\s+/g, ' ');
         const normalizedCorrect = correctAnswer.toLowerCase().trim().replace(/\s+/g, ' ');
 
-        // Extract key phrases from correct answer (simple keyword matching)
         const keyPhrases = extractKeyPhrases(normalizedCorrect);
         let matchedPhrases = 0;
 
@@ -511,13 +483,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Calculate score based on matched phrases and answer length
         const phraseMatchRatio = keyPhrases.length > 0 ? matchedPhrases / keyPhrases.length : 0;
         const lengthRatio = Math.min(normalizedUser.length / normalizedCorrect.length, 1);
         
-        // Weighted scoring: 60% phrase matching, 40% length similarity
         const similarityScore = (phraseMatchRatio * 0.6) + (lengthRatio * 0.4);
-        const score = Math.round(similarityScore * marks * 10) / 10; // Round to 1 decimal
+        const score = Math.round(similarityScore * marks * 10) / 10;
 
         let feedback = '';
         if (similarityScore >= 0.8) {
@@ -534,17 +504,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function extractKeyPhrases(text) {
-        // Remove common words and extract meaningful phrases
         const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can'];
         const words = text.split(/\s+/).filter(word => word.length > 3 && !stopWords.includes(word));
         
-        // Extract 2-3 word phrases
         const phrases = [];
         for (let i = 0; i < words.length - 1; i++) {
             phrases.push(words[i] + ' ' + words[i + 1]);
         }
         
-        return phrases.slice(0, 10); // Return top 10 key phrases
+        return phrases.slice(0, 10);
     }
 
     // Highlight Management Functions for User Answers
@@ -560,37 +528,29 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyUserAnswerHighlights(questionId, element) {
         const highlights = getQuestionHighlights(questionId);
         if (highlights.length === 0) {
-            // Just set text content if no highlights
             const text = userAnswers[questionId] || '';
             element.textContent = text;
             return;
         }
 
-        // Get clean text content (strip any existing HTML)
         let textContent = userAnswers[questionId] || element.textContent || '';
         
-        // Escape HTML to prevent issues
         const escapeHtml = (text) => {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         };
 
-        // Sort highlights in reverse order to maintain correct indices when inserting
         const sortedHighlights = [...highlights].sort((a, b) => b.start - a.start);
         
-        // Build segments array (start with full text)
         let segments = [];
         let lastIndex = textContent.length;
         
-        // Process highlights in reverse order
         sortedHighlights.forEach(highlight => {
-            // Make sure indices are within bounds
             if (highlight.start < 0 || highlight.end > textContent.length || highlight.start >= highlight.end) {
                 return;
             }
             
-            // Add segment after this highlight (if any)
             if (highlight.end < lastIndex) {
                 segments.unshift({
                     type: 'text',
@@ -598,7 +558,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
             
-            // Add highlight segment
             segments.unshift({
                 type: 'highlight',
                 id: highlight.id,
@@ -608,7 +567,6 @@ document.addEventListener('DOMContentLoaded', () => {
             lastIndex = highlight.start;
         });
         
-        // Add any text before first highlight
         if (lastIndex > 0) {
             segments.unshift({
                 type: 'text',
@@ -616,7 +574,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // Build HTML from segments
         let htmlContent = '';
         segments.forEach(segment => {
             if (segment.type === 'highlight') {
@@ -640,36 +597,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (selectedText.length === 0) return false;
 
-        // Check if selection is within the answer element
         if (!element.contains(range.commonAncestorContainer)) {
             return false;
         }
 
-        // Check if already highlighted
         if (range.commonAncestorContainer.parentElement?.classList.contains('user-highlight')) {
             return false;
         }
 
-        // Get clean text content (strip existing highlights HTML)
-        const textContent = element.textContent || '';
-        
-        // Find the position of selected text in clean content
-        let startOffset = 0;
-        let found = false;
-        
-        // Calculate offset by traversing text before selection
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(element);
         preCaretRange.setEnd(range.startContainer, range.startOffset);
-        startOffset = preCaretRange.toString().length;
-        found = true;
-        
-        if (!found) return false;
+        const startOffset = preCaretRange.toString().length;
 
         const endOffset = startOffset + selectedText.length;
         const highlightId = Date.now();
 
-        // Save highlight
         const highlights = getQuestionHighlights(questionId);
         highlights.push({
             id: highlightId,
@@ -679,7 +622,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         saveQuestionHighlights(questionId, highlights);
 
-        // Wrap selected text with highlight span
         try {
             const highlightSpan = document.createElement('span');
             highlightSpan.className = 'user-highlight';
@@ -690,11 +632,9 @@ document.addEventListener('DOMContentLoaded', () => {
             range.insertNode(highlightSpan);
         } catch (e) {
             console.error('Error applying highlight:', e);
-            // Fallback: re-render
             applyUserAnswerHighlights(questionId, element);
         }
 
-        // Clear selection
         selection.removeAllRanges();
         highlightMode[questionId] = false;
         updateHighlightButton(questionId);
@@ -711,15 +651,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (highlightMode[questionId]) {
                 editableDiv.style.cursor = 'text';
                 editableDiv.style.userSelect = 'text';
-                editableDiv.style.webkitUserSelect = 'text';
-                editableDiv.style.mozUserSelect = 'text';
-                editableDiv.style.msUserSelect = 'text';
             } else {
                 editableDiv.style.cursor = '';
                 editableDiv.style.userSelect = '';
-                editableDiv.style.webkitUserSelect = '';
-                editableDiv.style.mozUserSelect = '';
-                editableDiv.style.msUserSelect = '';
             }
         }
     };
@@ -766,66 +700,78 @@ document.addEventListener('DOMContentLoaded', () => {
         results.obtainedMarks = results.questions.reduce((sum, q) => sum + q.evaluation.score, 0);
         results.percentage = (results.obtainedMarks / results.totalMarks) * 100;
 
-        // Save results to localStorage
         localStorage.setItem('ready2study_test_results', JSON.stringify(results));
 
         // Redirect to results page
-        window.location.href = 'test-results.html';
+        window.location.href = '/test-results';
     }
 
     // Event Listeners
-    document.getElementById('prevBtn').addEventListener('click', () => {
-        if (currentQuestionIndex > 0) {
-            showQuestion(currentQuestionIndex - 1);
-        }
-    });
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const submitBtn = document.getElementById('submitBtn');
 
-    document.getElementById('nextBtn').addEventListener('click', () => {
-        if (currentQuestionIndex < testQuestions.length - 1) {
-            showQuestion(currentQuestionIndex + 1);
-        }
-    });
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (currentQuestionIndex > 0) {
+                showQuestion(currentQuestionIndex - 1);
+            }
+        });
+    }
 
-    document.getElementById('submitBtn').addEventListener('click', () => {
-        if (confirm('Are you sure you want to submit the test? You cannot change your answers after submission.')) {
-            submitTest();
-        }
-    });
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            if (currentQuestionIndex < testQuestions.length - 1) {
+                showQuestion(currentQuestionIndex + 1);
+            }
+        });
+    }
+
+    if (submitBtn) {
+        submitBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to submit the test? You cannot change your answers after submission.')) {
+                submitTest();
+            }
+        });
+    }
 
     // Initialize Test
     try {
-        // Ensure mockQuestions is available
         if (typeof mockQuestions === 'undefined') {
             console.error('mockQuestions not found. Make sure mockData.js is loaded.');
-            document.getElementById('testQuestionsContainer').innerHTML = `
-                <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
-                    <h3>Error: Questions data not found.</h3>
-                    <p style="margin-top: 1rem;">Please refresh the page or upload a PDF.</p>
-                    <a href="dashboard.html" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Back to Dashboard</a>
-                </div>
-            `;
+            const container = document.getElementById('testQuestionsContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                        <h3>Error: Questions data not found.</h3>
+                        <p style="margin-top: 1rem;">Please refresh the page or upload a PDF.</p>
+                        <a href="/dashboard" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Back to Dashboard</a>
+                    </div>
+                `;
+            }
             return;
         }
         
         selectTestQuestions();
         
-        // Check if questions were selected
         if (testQuestions.length === 0) {
             console.error('No questions selected for test');
-            document.getElementById('testQuestionsContainer').innerHTML = `
-                <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
-                    <h3>No questions available for test.</h3>
-                    <p style="margin-top: 1rem;">Please upload a PDF and generate questions first.</p>
-                    <a href="index.html" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Upload PDF</a>
-                </div>
-            `;
+            const container = document.getElementById('testQuestionsContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                        <h3>No questions available for test.</h3>
+                        <p style="margin-top: 1rem;">Please upload a PDF and generate questions first.</p>
+                        <a href="/" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Upload PDF</a>
+                    </div>
+                `;
+            }
             return;
         }
         
         console.log('Test initialized with', testQuestions.length, 'questions');
         renderQuestions();
         
-        // Ensure first question is displayed immediately
         setTimeout(() => {
             showQuestion(0);
         }, 50);
@@ -834,13 +780,16 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTimer();
     } catch (error) {
         console.error('Error initializing test:', error);
-        document.getElementById('testQuestionsContainer').innerHTML = `
-            <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
-                <h3>Error loading test.</h3>
-                <p style="margin-top: 1rem;">${error.message}</p>
-                <a href="dashboard.html" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Back to Dashboard</a>
-            </div>
-        `;
+        const container = document.getElementById('testQuestionsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                    <h3>Error loading test.</h3>
+                    <p style="margin-top: 1rem;">${error.message}</p>
+                    <a href="/dashboard" class="btn btn-primary" style="margin-top: 1rem; display: inline-block;">Back to Dashboard</a>
+                </div>
+            `;
+        }
     }
 
     // Chat Functionality
@@ -851,97 +800,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatSend = document.getElementById('chatSend');
     const chatMessages = document.getElementById('chatMessages');
 
-    // Open chat modal
-    chatButton.addEventListener('click', () => {
-        chatModal.classList.add('active');
-        chatInput.focus();
-    });
+    if (chatButton) {
+        chatButton.addEventListener('click', () => {
+            chatModal.classList.add('active');
+            if (chatInput) chatInput.focus();
+        });
+    }
 
-    // Close chat modal
-    chatClose.addEventListener('click', () => {
-        chatModal.classList.remove('active');
-    });
-
-    // Close on outside click
-    chatModal.addEventListener('click', (e) => {
-        if (e.target === chatModal) {
+    if (chatClose) {
+        chatClose.addEventListener('click', () => {
             chatModal.classList.remove('active');
-        }
-    });
+        });
+    }
 
-    // Send message function
+    if (chatModal) {
+        chatModal.addEventListener('click', (e) => {
+            if (e.target === chatModal) {
+                chatModal.classList.remove('active');
+            }
+        });
+    }
+
     function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
 
-        // Add user message
         addMessage(message, 'user');
         chatInput.value = '';
 
-        // Simulate bot response (in production, this would call an API)
         setTimeout(() => {
             const currentQuestion = testQuestions[currentQuestionIndex];
             let botResponse = '';
             
             if (message.toLowerCase().includes('current question') || message.toLowerCase().includes('this question')) {
-                botResponse = `The current question is: "${currentQuestion.question}". It's worth ${currentQuestion.marks} mark${currentQuestion.marks > 1 ? 's' : ''}. How can I help you with it?`;
-            } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution') || message.toLowerCase().includes('what is the answer')) {
-                // Generate brief answer
+                botResponse = `The current question is: "${currentQuestion.question}". It's worth ${currentQuestion.marks} mark${currentQuestion.marks > 1 ? 's' : ''}.`;
+            } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution')) {
                 const briefAnswer = currentQuestion.answer.length > 200 
                     ? currentQuestion.answer.substring(0, 200) + '...' 
                     : currentQuestion.answer;
-                botResponse = `**Brief Answer:**\n\n${briefAnswer}\n\nThis is a ${currentQuestion.marks}-mark question. The answer covers the key points needed to address: "${currentQuestion.question.substring(0, 60)}..."`;
+                botResponse = `**Brief Answer:**\n\n${briefAnswer}\n\nThis is a ${currentQuestion.marks}-mark question.`;
             } else if (message.toLowerCase().includes('help') || message.toLowerCase().includes('hint')) {
-                botResponse = `I'm here to help! You can ask me about:
-- Understanding what the question is asking
-- Breaking down complex questions
-- Study tips and strategies
-- General test guidance`;
-            } else if (message.toLowerCase().includes('brief') || message.toLowerCase().includes('summary') || message.toLowerCase().includes('summarize')) {
-                // Generate brief summary
-                const briefSummary = currentQuestion.answer.length > 150 
-                    ? currentQuestion.answer.substring(0, 150) + '...' 
-                    : currentQuestion.answer;
-                botResponse = `**Brief Summary:**\n\n${briefSummary}\n\nThis addresses the question: "${currentQuestion.question}"`;
+                botResponse = `I'm here to help! You can ask me about:\n- Understanding what the question is asking\n- Breaking down complex questions\n- Study tips and strategies`;
             } else {
-                // Default: provide brief answer automatically
                 const briefAnswer = currentQuestion.answer.length > 200 
                     ? currentQuestion.answer.substring(0, 200) + '...' 
                     : currentQuestion.answer;
-                botResponse = `**Question:** ${currentQuestion.question}\n\n**Brief Answer:**\n${briefAnswer}\n\nWould you like more details or help understanding any specific part?`;
+                botResponse = `**Question:** ${currentQuestion.question}\n\n**Brief Answer:**\n${briefAnswer}`;
             }
             
             addMessage(botResponse, 'bot');
         }, 500);
     }
 
-    // Add message to chat
     function addMessage(text, type) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${type}-message`;
         
-        // Format text with line breaks and bold text
         let formattedText = text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold text
-            .replace(/\n/g, '<br>'); // Line breaks
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
         
         messageDiv.innerHTML = `
             <div class="message-content">
                 <p style="white-space: pre-wrap;">${formattedText}</p>
             </div>
         `;
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (chatMessages) {
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
     }
 
-    // Send on button click
-    chatSend.addEventListener('click', sendMessage);
+    if (chatSend) {
+        chatSend.addEventListener('click', sendMessage);
+    }
 
-    // Send on Enter key
-    chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendMessage();
-        }
-    });
+    if (chatInput) {
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    }
 });
 
