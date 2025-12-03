@@ -5,13 +5,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.filter-btn[data-filter]');
     const toggleAllBtn = document.getElementById('toggleAllAnswers');
     const toggleHighlightModeBtn = document.getElementById('toggleHighlightMode');
+    const translateCurrentAnswerBtn = document.getElementById('translateCurrentAnswer');
+    const untranslateCurrentAnswerBtn = document.getElementById('untranslateCurrentAnswer');
 
     let currentFilter = 'all';
     let allAnswersVisible = false;
     let selectedText = null;
     let selectedRange = null;
     let highlightMode = false;
-    let viewMode = 'one-by-one'; // 'one-by-one' or 'grid'
+    let viewMode = 'grid'; // ALWAYS 'grid' to show all questions
     let currentQuestionIndex = 0;
     let filteredQuestionsList = [];
     
@@ -26,22 +28,71 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Student Info
     const userData = JSON.parse(localStorage.getItem('ready2study_user'));
     if (userData) {
-        document.getElementById('studentHeaderInfo').style.display = 'block';
-        document.getElementById('headerName').textContent = userData.name;
-        document.getElementById('headerDetails').textContent = `${userData.course} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college}`;
+        const headerInfo = document.getElementById('studentHeaderInfo');
+        headerInfo.style.display = 'flex';
+        
+        // Set colorful, bold name
+        const headerName = document.getElementById('headerName');
+        headerName.textContent = userData.name;
+        
+        // Set colorful, attractive details with icons
+        const courseSpan = document.getElementById('courseSpan');
+        const yearSpan = document.getElementById('yearSpan');
+        const collegeSpan = document.getElementById('collegeSpan');
+        
+        if (courseSpan) {
+            courseSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                ${userData.course}
+            `;
+        }
+        
+        if (yearSpan) {
+            yearSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                ${userData.year}${getOrdinal(userData.year)} Year
+            `;
+        }
+        
+        if (collegeSpan) {
+            collegeSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                ${userData.college}
+            `;
+        }
 
         // Logout / Edit Profile Logic
-        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', (e) => {
             e.preventDefault();
             localStorage.removeItem('ready2study_user');
             window.location.href = 'student-info.html';
         });
+        }
     }
 
     function getOrdinal(n) {
         const s = ["th", "st", "nd", "rd"];
         const v = n % 100;
         return s[(v - 20) % 10] || s[v] || s[0];
+    }
+
+    // Helper function for HTML escaping - must be defined before use
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // Highlight Management Functions
@@ -67,43 +118,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyHighlights(questionId, answerElement) {
         const highlights = getQuestionHighlights(questionId);
-        if (highlights.length === 0) return;
+        if (highlights.length === 0) {
+            // If no highlights, just ensure the element has clean text
+            const currentText = answerElement.textContent || answerElement.innerText || '';
+            if (currentText) {
+                const answerLabel = answerElement.querySelector('strong');
+                if (answerLabel && answerLabel.textContent.includes('Answer:')) {
+                    const textOnly = answerElement.textContent.replace('Answer:', '').trim();
+                    answerElement.innerHTML = '<strong>Answer:</strong> ' + escapeHtml(textOnly);
+                } else {
+                    answerElement.innerHTML = escapeHtml(currentText);
+                }
+            }
+            return;
+        }
 
-        // Get the original text content (without existing highlights)
-        const textContent = answerElement.textContent || answerElement.innerText || '';
-        if (!textContent) return;
-
-        // Remove any existing highlight spans to get clean text
+        // Get clean text content (without HTML tags or existing highlights)
+        // First, get the original text from the question data if available
+        let cleanText = '';
+        const question = allQuestions.find(q => q.id === questionId);
+        
+        if (question && question.answer) {
+            // Use original answer text
+            cleanText = question.answer.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        } else {
+            // Fallback: extract text from current element
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = answerElement.innerHTML;
-        const cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            // Remove highlight spans
+            tempDiv.querySelectorAll('.highlight').forEach(span => {
+                span.replaceWith(document.createTextNode(span.textContent));
+            });
+            cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            cleanText = cleanText.replace(/\s+/g, ' ').trim();
+        }
         
-        // Escape HTML to prevent issues
-        const escapeHtml = (text) => {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        };
+        if (!cleanText) return;
+        
+        // escapeHtml function is already defined at the top of the file
 
         // Sort highlights in reverse order to maintain correct indices when inserting
         const sortedHighlights = [...highlights].sort((a, b) => b.start - a.start);
         
-        // Build segments array (start with full text)
+        // Build segments array
         let segments = [];
         let lastIndex = cleanText.length;
         
         // Process highlights in reverse order
         sortedHighlights.forEach(highlight => {
-            // Make sure indices are within bounds
-            if (highlight.start < 0 || highlight.end > cleanText.length || highlight.start >= highlight.end) {
-                return;
-            }
+            // Validate and adjust indices
+            let start = Math.max(0, Math.min(highlight.start, cleanText.length));
+            let end = Math.max(start, Math.min(highlight.end, cleanText.length));
+            
+            if (start >= end) return;
             
             // Add segment after this highlight (if any)
-            if (highlight.end < lastIndex) {
+            if (end < lastIndex) {
                 segments.unshift({
                     type: 'text',
-                    content: cleanText.substring(highlight.end, lastIndex)
+                    content: cleanText.substring(end, lastIndex)
                 });
             }
             
@@ -111,10 +184,10 @@ document.addEventListener('DOMContentLoaded', () => {
             segments.unshift({
                 type: 'highlight',
                 id: highlight.id,
-                content: cleanText.substring(highlight.start, highlight.end)
+                content: cleanText.substring(start, end)
             });
             
-            lastIndex = highlight.start;
+            lastIndex = start;
         });
         
         // Add any text before first highlight
@@ -138,12 +211,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update the answer element with highlighted content
         // Preserve the "Answer:" label if it exists
         const answerLabel = answerElement.querySelector('strong');
-        if (answerLabel && answerLabel.textContent.includes('Answer:')) {
-            answerElement.innerHTML = '<strong>Answer:</strong><br>' + htmlContent;
+        if (answerLabel && answerElement.textContent.includes('Answer:')) {
+            answerElement.innerHTML = '<strong>Answer:</strong> ' + htmlContent;
         } else {
             answerElement.innerHTML = htmlContent;
         }
     }
+    
+    // escapeHtml function is already defined at the top of the file
 
     function highlightSelectedText(questionId, answerElement) {
         const selection = window.getSelection();
@@ -157,56 +232,188 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedText.length === 0) return false;
 
         // Check if selection is within the answer element
-        if (!answerElement.contains(range.commonAncestorContainer)) {
+        let container = range.commonAncestorContainer;
+        while (container && container !== answerElement && !answerElement.contains(container)) {
+            container = container.parentElement;
+        }
+        
+        if (!container || !answerElement.contains(container)) {
             return false;
         }
 
-        // Check if already highlighted
-        if (range.commonAncestorContainer.parentElement?.classList.contains('highlight')) {
+        // Check if selection is entirely within an existing highlight
+        // Allow partial selections that span highlights
+        let parent = range.commonAncestorContainer;
+        let isEntirelyInHighlight = false;
+        while (parent && parent !== answerElement) {
+            if (parent.classList && parent.classList.contains('highlight')) {
+                // Check if the entire selection is within this highlight
+                const highlightSpan = parent;
+                const highlightText = highlightSpan.textContent || highlightSpan.innerText || '';
+                if (highlightText.includes(selectedText.trim())) {
+                    // Check if selection start and end are both within this highlight
+                    const rangeStart = range.startContainer;
+                    const rangeEnd = range.endContainer;
+                    if (highlightSpan.contains(rangeStart) && highlightSpan.contains(rangeEnd)) {
+                        isEntirelyInHighlight = true;
+                        break;
+                    }
+                }
+            }
+            parent = parent.parentElement;
+        }
+        
+        // If selection is entirely within an existing highlight, don't highlight again
+        if (isEntirelyInHighlight) {
             return false;
         }
 
-        // Calculate offset by traversing text before selection
+        // Get the parent container that has the full answer (including "Answer:" label)
+        const answerContainer = answerElement.parentElement;
+        
+        // Get clean text content from the answer element only (without HTML tags)
+        // Use the original question answer text for accurate offset calculation
+        const question = allQuestions.find(q => q.id === questionId);
+        let cleanText = '';
+        
+        if (question && question.answer) {
+            // Use original answer text - this is the source of truth
+            cleanText = question.answer.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        } else {
+            // Fallback: extract text from current element
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = answerElement.innerHTML;
+            // Remove highlight spans to get clean text
+            tempDiv.querySelectorAll('.highlight').forEach(span => {
+                span.replaceWith(document.createTextNode(span.textContent));
+            });
+            cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            cleanText = cleanText.replace(/\s+/g, ' ').trim();
+        }
+        
+        if (!cleanText || cleanText.length === 0) {
+            console.error('No text content found in answer element');
+            return false;
+        }
+        
+        // Calculate start offset within the clean text
+        // Use a simpler approach: find the selected text in the clean text
+        const normalizedSelectedText = selectedText.replace(/\s+/g, ' ').trim();
+        const normalizedCleanText = cleanText.replace(/\s+/g, ' ');
+        
+        // Try to find the selected text in the clean text
+        // First, try to get offset using range
+        let startOffset = 0;
+        try {
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(answerElement);
         preCaretRange.setEnd(range.startContainer, range.startOffset);
-        const startOffset = preCaretRange.toString().length;
+            const beforeText = preCaretRange.toString().replace(/\s+/g, ' ');
+            startOffset = beforeText.length;
+        } catch (e) {
+            console.warn('Error calculating offset with range, using text search:', e);
+            // Fallback: search for the text
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+            }
+        }
+        
+        // Validate and adjust offset
+        if (startOffset < 0) startOffset = 0;
+        if (startOffset > normalizedCleanText.length) {
+            // Try finding the text instead
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+            } else {
+                return false;
+            }
+        }
+        
+        const endOffset = startOffset + normalizedSelectedText.length;
 
-        const endOffset = startOffset + selectedText.length;
+        // Validate offsets against normalized clean text
+        if (startOffset < 0 || endOffset > normalizedCleanText.length || startOffset >= endOffset) {
+            // Try to find the text in the clean text as fallback
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+                const adjustedEnd = searchIndex + normalizedSelectedText.length;
+                if (adjustedEnd <= normalizedCleanText.length) {
+                    const adjustedHighlightId = Date.now();
+                    const highlights = getQuestionHighlights(questionId);
+                    highlights.push({
+                        id: adjustedHighlightId,
+                        start: startOffset,
+                        end: adjustedEnd,
+                        text: normalizedSelectedText
+                    });
+                    saveQuestionHighlights(questionId, highlights);
+                    applyHighlights(questionId, answerElement);
+                    selection.removeAllRanges();
+                    return true;
+                }
+            }
+            console.error('Invalid highlight offsets:', { 
+                startOffset, 
+                endOffset, 
+                cleanTextLength: normalizedCleanText.length,
+                selectedText: normalizedSelectedText
+            });
+            return false;
+        }
+        
+        // Verify the text at this position matches
+        const expectedText = normalizedCleanText.substring(startOffset, endOffset).trim();
+        if (expectedText !== normalizedSelectedText && !normalizedCleanText.substring(startOffset, endOffset).includes(normalizedSelectedText)) {
+            // Try to find the text in cleanText
+            const foundIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (foundIndex >= 0) {
+                // Use the found position
+                const adjustedStart = foundIndex;
+                const adjustedEnd = foundIndex + normalizedSelectedText.length;
+                if (adjustedStart >= 0 && adjustedEnd <= normalizedCleanText.length) {
+                    // Update offsets
+                    const adjustedHighlightId = Date.now();
+                    const highlights = getQuestionHighlights(questionId);
+                    highlights.push({
+                        id: adjustedHighlightId,
+                        start: adjustedStart,
+                        end: adjustedEnd,
+                        text: normalizedSelectedText
+                    });
+                    saveQuestionHighlights(questionId, highlights);
+                    applyHighlights(questionId, answerElement);
+                    selection.removeAllRanges();
+                    return true;
+                }
+            }
+            console.warn('Selected text mismatch:', { expectedText, selectedText: normalizedSelectedText });
+            return false;
+        }
         const highlightId = Date.now();
 
-        // Save highlight
+        // Save highlight (use normalized text)
         const highlights = getQuestionHighlights(questionId);
         highlights.push({
             id: highlightId,
             start: startOffset,
             end: endOffset,
-            text: selectedText
+            text: normalizedSelectedText
         });
         saveQuestionHighlights(questionId, highlights);
 
-        // Wrap selected text with highlight span
-        try {
-            const highlightSpan = document.createElement('span');
-            highlightSpan.className = 'highlight';
-            highlightSpan.setAttribute('data-highlight-id', highlightId);
-            highlightSpan.textContent = selectedText;
-            
-            range.deleteContents();
-            range.insertNode(highlightSpan);
-        } catch (e) {
-            console.error('Error applying highlight:', e);
-            // Fallback: re-render the question
-            const filteredQuestions = currentFilter === 'all'
-                ? allQuestions
-                : allQuestions.filter(q => q.marks == currentFilter);
-            renderQuestions(filteredQuestions);
-        }
+        // Re-apply all highlights to ensure proper rendering
+        // This ensures highlights work correctly even when there are existing highlights
+        applyHighlights(questionId, answerElement);
 
-        // Clear selection
+        // Clear selection but keep highlight mode enabled for multiple highlights
         selection.removeAllRanges();
-        highlightMode = false;
-        updateHighlightButtons();
+        
+        // Don't disable highlight mode automatically - let user disable it manually
+        // highlightMode = false;
+        // updateHighlightButtons();
 
         return true;
     }
@@ -261,22 +468,171 @@ document.addEventListener('DOMContentLoaded', () => {
             highlightMode = !highlightMode;
             updateHighlightButtons();
             
-            // Update cursor for all answer texts
+            // Update cursor and highlight state for all answer texts and buttons
             document.querySelectorAll('.answer-text').forEach(answerText => {
+                const questionId = parseInt(answerText.getAttribute('data-question-id'));
+                const highlightBtn = document.querySelector(`.highlight-mode-btn[data-question-id="${questionId}"]`);
+                
                 if (highlightMode) {
                     answerText.style.cursor = 'text';
                     answerText.style.userSelect = 'text';
                     answerText.style.webkitUserSelect = 'text';
                     answerText.style.mozUserSelect = 'text';
                     answerText.style.msUserSelect = 'text';
+                    answerText.style.background = '#fefce8';
+                    
+                    // Update individual highlight button state
+                    if (highlightBtn) {
+                        highlightBtn.dataset.highlightEnabled = 'true';
+                        highlightBtn.style.background = '#22c55e';
+                        highlightBtn.style.color = 'white';
+                        highlightBtn.style.borderColor = '#16a34a';
+                    }
                 } else {
                     answerText.style.cursor = '';
                     answerText.style.userSelect = '';
                     answerText.style.webkitUserSelect = '';
                     answerText.style.mozUserSelect = '';
                     answerText.style.msUserSelect = '';
+                    answerText.style.background = '';
+                    
+                    // Update individual highlight button state
+                    if (highlightBtn) {
+                        highlightBtn.dataset.highlightEnabled = 'false';
+                        highlightBtn.style.background = '#fef9c3';
+                        highlightBtn.style.color = '#854d0e';
+                        highlightBtn.style.borderColor = '#fde047';
+                    }
                 }
             });
+        });
+    }
+
+    // Translate Current Answer to Tamil
+    if (translateCurrentAnswerBtn) {
+        translateCurrentAnswerBtn.addEventListener('click', async () => {
+            // Get current question ID from the displayed question
+            const currentAnswerText = document.querySelector('.answer-text[data-question-id]');
+            if (!currentAnswerText) {
+                alert('No question is currently displayed.');
+                return;
+            }
+            
+            const currentQuestionId = parseInt(currentAnswerText.getAttribute('data-question-id'));
+            if (!currentQuestionId) {
+                alert('Could not identify the current question.');
+                return;
+            }
+            
+            // Get current question details
+            const currentQuestion = allQuestions.find(q => q.id === currentQuestionId);
+            if (!currentQuestion) {
+                alert('Question not found.');
+                return;
+            }
+            
+            // Get the full answer text - remove any HTML tags and get clean text
+            let fullAnswerText = '';
+            if (currentAnswerText.textContent) {
+                fullAnswerText = currentAnswerText.textContent.trim();
+            } else if (currentQuestion.answer) {
+                fullAnswerText = currentQuestion.answer.trim();
+            } else {
+                alert('Could not find answer text to translate.');
+                return;
+            }
+            
+            // Remove "Answer:" label if present
+            fullAnswerText = fullAnswerText.replace(/^Answer:\s*/i, '').trim();
+            
+            if (!fullAnswerText) {
+                alert('Answer text is empty.');
+                return;
+            }
+            
+            // Show loading state
+            translateCurrentAnswerBtn.disabled = true;
+            translateCurrentAnswerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
+            
+            try {
+                // Translate the FULL answer text to Tamil
+                const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(fullAnswerText)}&langpair=en|ta`);
+                const answerData = await answerResponse.json();
+                
+                if (answerData.responseStatus === 200 && answerData.responseData.translatedText) {
+                    const tamilTranslation = answerData.responseData.translatedText;
+                    
+                    // Store original answer for reverting
+                    currentAnswerText.setAttribute('data-original-answer', fullAnswerText);
+                    currentAnswerText.setAttribute('data-translated-answer', tamilTranslation);
+                    
+                    // Update answer display - Show Tamil translation prominently
+                    currentAnswerText.innerHTML = `
+                        <div style="padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 0.75rem; font-family: 'Noto Sans Tamil', sans-serif; font-size: 1rem; line-height: 1.8; color: #1e293b;">
+                            <strong style="color: #10b981; font-size: 1.1rem; display: block; margin-bottom: 0.5rem;">தமிழ்:</strong>
+                            <div style="font-size: 1rem; line-height: 1.8;">${escapeHtml(tamilTranslation)}</div>
+                        </div>
+                        <div style="padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #64748b; font-size: 0.9rem; line-height: 1.6; color: #64748b;">
+                            <strong style="color: #64748b; display: block; margin-bottom: 0.5rem;">English:</strong>
+                            <div>${escapeHtml(fullAnswerText)}</div>
+                        </div>
+                    `;
+                    
+                    // Hide translate button, show untranslate button
+                    translateCurrentAnswerBtn.style.display = 'none';
+                    if (untranslateCurrentAnswerBtn) {
+                        untranslateCurrentAnswerBtn.style.display = 'flex';
+                    }
+                    
+                    console.log(`✅ Full answer translated to Tamil for question ${currentQuestionId}`);
+                    console.log(`Original: ${fullAnswerText.substring(0, 50)}...`);
+                    console.log(`Tamil: ${tamilTranslation.substring(0, 50)}...`);
+                } else {
+                    throw new Error('Translation failed: ' + (answerData.responseDetails || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Translation error:', error);
+                alert('Translation failed. Please try again. Error: ' + error.message);
+            } finally {
+                translateCurrentAnswerBtn.disabled = false;
+                translateCurrentAnswerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate Answer to Tamil';
+            }
+        });
+    }
+
+    // Untranslate Current Answer (Revert to English)
+    if (untranslateCurrentAnswerBtn) {
+        untranslateCurrentAnswerBtn.addEventListener('click', () => {
+            // Get current question ID from the displayed question
+            const currentAnswerText = document.querySelector('.answer-text[data-question-id]');
+            if (!currentAnswerText) {
+                alert('No question is currently displayed.');
+                return;
+            }
+            
+            const originalAnswer = currentAnswerText.getAttribute('data-original-answer');
+            if (originalAnswer) {
+                // Restore original English answer
+                currentAnswerText.textContent = originalAnswer;
+                currentAnswerText.removeAttribute('data-original-answer');
+                currentAnswerText.removeAttribute('data-translated-answer');
+                
+                // Re-apply highlights if any
+                const questionId = parseInt(currentAnswerText.getAttribute('data-question-id'));
+                if (questionId) {
+                    applyHighlights(questionId, currentAnswerText);
+                }
+                
+                // Hide untranslate button, show translate button
+                untranslateCurrentAnswerBtn.style.display = 'none';
+                if (translateCurrentAnswerBtn) {
+                    translateCurrentAnswerBtn.style.display = 'flex';
+                }
+                
+                console.log('✅ Answer reverted to English');
+            } else {
+                alert('No translation found to revert.');
+            }
         });
     }
 
@@ -341,17 +697,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const parsed = JSON.parse(storedQuestions);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 allQuestions = parsed;
+                
+                // Always update question 4 with the latest content from mockData
+                const question4Index = allQuestions.findIndex(q => q.id === 4);
+                const newQuestion4 = mockQuestions.find(q => q.id === 4);
+                
+                if (question4Index !== -1 && newQuestion4) {
+                    // Update question 4 to match mockData
+                    allQuestions[question4Index] = { ...newQuestion4 };
+                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
+                    console.log('✅ Updated question 4 with latest content:', newQuestion4.question.substring(0, 50) + '...');
+                } else if (question4Index === -1 && newQuestion4) {
+                    // Add question 4 if it doesn't exist
+                    allQuestions.push(newQuestion4);
+                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
+                    console.log('✅ Added question 4 to questions list');
+                }
             } else {
                 allQuestions = mockQuestions;
+                localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
+                console.log('✅ Loaded all questions from mockData');
             }
         } catch (e) {
             console.error('Error parsing stored questions:', e);
             allQuestions = mockQuestions;
+            localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
+            console.log('✅ Reset to mockData due to error');
         }
     } else {
         // Store mockQuestions in localStorage as PDF questions (for testing)
         allQuestions = mockQuestions;
         localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
+        console.log('✅ Initialized with mockData questions:', allQuestions.length);
     }
 
     // Initialize - make sure we have questions to display
@@ -371,19 +748,379 @@ document.addEventListener('DOMContentLoaded', () => {
         pdfStatusCard.style.display = 'none';
     }
     
-    // Set view mode to grid - show all questions on same page
+    // Set view mode to grid - show all questions on same page (DEFAULT)
+    // FORCE grid mode - always show all questions
     viewMode = 'grid';
     currentQuestionIndex = 0;
     
-    // Initial render - show all questions by default, but in one-by-one view
-    const initialFiltered = currentFilter === 'all'
-        ? allQuestions
-        : currentFilter === 'important'
-        ? allQuestions.filter(q => isImportant(q.id))
-        : allQuestions.filter(q => q.marks == currentFilter);
+    // Ensure "All Questions" filter is active by default
+    currentFilter = 'all';
+    const allFilterBtn = document.querySelector('.filter-btn[data-filter="all"]');
+    if (allFilterBtn) {
+        // Remove active class from all filter buttons
+        filterBtns.forEach(b => b.classList.remove('active'));
+        // Add active class to "All Questions" button
+        allFilterBtn.classList.add('active');
+    }
     
-    // Render questions on page load in one-by-one view
+    // Display PDF Content First with Questions and Answers
+    function displayPDFContent() {
+        const pdfContentSection = document.getElementById('pdfContentSection');
+        const pdfContentDisplay = document.getElementById('pdfContentDisplay');
+        const togglePDFBtn = document.getElementById('togglePDFContent');
+        
+        if (!pdfContentSection || !pdfContentDisplay) return;
+        
+        const pdfContent = localStorage.getItem('ready2study_pdf_content');
+        const pdfData = JSON.parse(localStorage.getItem('ready2study_pdf')) || {};
+        const pdfName = pdfData.name || 'Uploaded Document';
+        const storedQuestions = localStorage.getItem('ready2study_pdf_questions');
+        let pdfQuestions = [];
+        
+        if (storedQuestions) {
+            try {
+                pdfQuestions = JSON.parse(storedQuestions);
+            } catch (e) {
+                console.error('Error parsing PDF questions:', e);
+            }
+        }
+        
+        console.log('Checking PDF content:', pdfContent ? pdfContent.substring(0, 50) + '...' : 'No content');
+        console.log('PDF questions found:', pdfQuestions.length);
+        
+        if ((pdfContent && pdfContent.trim().length > 0) || pdfQuestions.length > 0) {
+            // escapeHtml function is already defined at the top of the file
+            
+            let formattedHTML = '';
+            
+            // PDF Header
+            formattedHTML += `
+                <div style="margin-bottom: 1.5rem; padding: 1rem; background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%); border-radius: 0.5rem; border-left: 4px solid var(--primary); box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <div style="flex: 1;">
+                            <h3 style="color: var(--primary); font-size: 1rem; font-weight: 600; margin: 0;">📖 Uploaded PDF Content</h3>
+                            <p style="color: #64748b; font-size: 0.8rem; margin: 0.15rem 0 0 0;">${escapeHtml(pdfName)}</p>
+                        </div>
+                        <span style="background: rgba(99, 102, 241, 0.15); color: var(--primary); padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600;">${pdfQuestions.length} Questions</span>
+                    </div>
+                </div>
+            `;
+            
+            // Display Questions and Answers from PDF - Organized by Marks
+            if (pdfQuestions.length > 0) {
+                // Group questions by marks
+                const questionsByMarks = {
+                    1: pdfQuestions.filter(q => q.marks === 1),
+                    2: pdfQuestions.filter(q => q.marks === 2),
+                    3: pdfQuestions.filter(q => q.marks === 3),
+                    10: pdfQuestions.filter(q => q.marks === 10)
+                };
+                
+                // Display questions organized by marks (1, 2, 3, 10)
+                [1, 2, 3, 10].forEach(marks => {
+                    const questions = questionsByMarks[marks];
+                    if (questions.length > 0) {
+                        const markColor = marks === 1 ? '#10b981' : marks === 2 ? '#3b82f6' : marks === 3 ? '#8b5cf6' : '#f59e0b';
+                        const markLabel = marks === 1 ? '1 Mark' : marks === 2 ? '2 Marks' : marks === 3 ? '3 Marks' : '10 Marks';
+                        
+                        // Section Header
+                        formattedHTML += `
+                            <div style="margin-top: 2rem; margin-bottom: 1.5rem; padding: 1rem; background: linear-gradient(135deg, ${markColor}15 0%, ${markColor}08 100%); border-radius: 0.75rem; border-left: 5px solid ${markColor};">
+                                <h3 style="color: ${markColor}; font-size: 1.5rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.75rem;">
+                                    <span style="background: ${markColor}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 1rem;">
+                                        ${markLabel}
+                                    </span>
+                                    <span style="color: var(--text-muted); font-size: 0.875rem; font-weight: 600;">
+                                        (${questions.length} Question${questions.length > 1 ? 's' : ''})
+                                    </span>
+                                </h3>
+                            </div>
+                        `;
+                        
+                        // Display each question one by one
+                        questions.forEach((q, index) => {
+                            const questionNumber = index + 1;
+                            const isImportantQuestion = isImportant(q.id);
+                            
+                            formattedHTML += `
+                                <div class="pdf-question-card" data-question-id="${q.id}" data-marks="${marks}" style="margin-bottom: 2rem; padding: 1.5rem; background: white; border-radius: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; border-left: 4px solid ${markColor};">
+                                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                                        <span style="background: ${markColor}; color: white; padding: 0.4rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.875rem;">
+                                            ${marks} Mark${marks > 1 ? 's' : ''}
+                                        </span>
+                                        <span style="color: var(--text-muted); font-size: 0.875rem; font-weight: 600;">
+                                            ${markLabel} - Q${questionNumber}
+                                        </span>
+                                    </div>
+                                    
+                                    <!-- Question -->
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; line-height: 1.6; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid ${markColor}; margin-bottom: 1rem;">
+                                        ${escapeHtml(q.question)}
+                                    </div>
+                                    
+                                    <!-- Answer - Always Visible -->
+                                    <div class="pdf-answer-section visible" style="font-size: 1rem; color: #1e293b; line-height: 1.8; padding: 1rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 1rem; display: block !important; visibility: visible !important; opacity: 1 !important;">
+                                        <span style="color: #10b981; font-weight: 700;">Answer:</span> 
+                                        <span class="pdf-answer-text" data-question-id="${q.id}" style="color: #334155;">
+                                            ${escapeHtml(q.answer)}
+                                        </span>
+                                    </div>
+                                    
+                                    <!-- Buttons -->
+                                    <div class="pdf-answer-controls" style="padding-top: 1rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-start; gap: 0.5rem; flex-wrap: wrap;">
+                                        <button class="btn-icon pdf-chat-btn" title="Ask AI to clarify doubt" data-question-id="${q.id}" style="background: #dbeafe; color: #1e40af; border: 1px solid #60a5fa; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                                            Clarify Doubt
+                                        </button>
+                                        <button class="btn-icon pdf-sources-btn" title="Video Sources" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" style="background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path></svg>
+                                            Sources
+                                        </button>
+                                        <button class="btn-icon pdf-highlight-btn" title="Highlight text" data-question-id="${q.id}" style="background: #fef9c3; color: #854d0e; border: 1px solid #fde047; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+                                            Highlight
+                                        </button>
+                                        <button class="btn-icon pdf-listen-btn" title="Listen" data-question-id="${q.id}" style="background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                                            Listen
+                                        </button>
+                                        <button class="btn-icon pdf-translate-btn" title="Translate to Tamil" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" data-answer-text="${q.answer.replace(/"/g, '&quot;')}" style="background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg>
+                                            Translate
+                                        </button>
+                                        <button class="btn-icon pdf-save-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                                            ${isImportantQuestion ? 'Saved' : 'Save'}
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                });
+            } else if (pdfContent && pdfContent.trim().length > 0) {
+                // Show full PDF content (no truncation in inline display)
+                const displayContent = pdfContent;
+                const lines = displayContent.split('\n');
+                
+                formattedHTML += `<div style="font-family: 'Inter', sans-serif; font-size: 0.95rem; line-height: 1.8; color: var(--text-main); padding: 0.5rem;">`;
+                
+                lines.forEach((line, index) => {
+                    const trimmedLine = line.trim();
+                    
+                    if (trimmedLine.length === 0) {
+                        formattedHTML += '<br>';
+                    } else if (trimmedLine.match(/^(Chapter|Section|Part|Unit|CHAPTER|SECTION)\s+\d+/i)) {
+                        formattedHTML += `<h3 style="color: var(--primary); margin-top: ${index === 0 ? '0' : '1.5rem'}; margin-bottom: 0.75rem; font-size: 1.25rem; font-weight: 700; padding-top: 0.5rem; border-top: 2px solid #e2e8f0;">${escapeHtml(trimmedLine)}</h3>`;
+                    } else if (trimmedLine.match(/^\d+[\.\)]\s/)) {
+                        formattedHTML += `<div style="margin-left: 1.5rem; margin-bottom: 0.5rem; padding-left: 0.5rem;">${escapeHtml(trimmedLine)}</div>`;
+                    } else if (trimmedLine.match(/^[-•*]\s/)) {
+                        formattedHTML += `<div style="margin-left: 1.5rem; margin-bottom: 0.5rem; padding-left: 0.5rem;">${escapeHtml(trimmedLine)}</div>`;
+                    } else {
+                        formattedHTML += `<p style="margin-bottom: 0.75rem; text-align: justify;">${escapeHtml(trimmedLine)}</p>`;
+                    }
+                });
+                
+                formattedHTML += '</div>';
+            }
+            
+            pdfContentDisplay.innerHTML = formattedHTML;
+            // Hide PDF content section - keep questions visible
+            pdfContentSection.style.display = 'none';
+            pdfContentSection.style.visibility = 'hidden';
+            pdfContentSection.style.opacity = '0';
+            console.log('PDF content section hidden - questions remain visible');
+            
+            // Add event handlers for PDF question buttons
+            addPDFQuestionButtonHandlers();
+            
+            // Toggle button functionality
+            if (togglePDFBtn) {
+                const newToggleBtn = togglePDFBtn.cloneNode(true);
+                togglePDFBtn.parentNode.replaceChild(newToggleBtn, togglePDFBtn);
+                
+                let isVisible = true;
+                newToggleBtn.addEventListener('click', () => {
+                    isVisible = !isVisible;
+                    pdfContentDisplay.style.display = isVisible ? 'block' : 'none';
+                    newToggleBtn.textContent = isVisible ? 'Hide PDF' : 'Show PDF';
+                });
+            }
+        } else {
+            pdfContentSection.style.display = 'none';
+        }
+    }
+    
+    // Add button handlers for PDF question cards
+    function addPDFQuestionButtonHandlers() {
+        // Chat button
+        document.querySelectorAll('.pdf-chat-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                openChatForQuestion(questionId);
+            });
+        });
+        
+        // Sources button
+        document.querySelectorAll('.pdf-sources-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                const question = allQuestions.find(q => q.id === questionId);
+                if (question) {
+                    showSourcesSidebar(questionText, question);
+                }
+            });
+        });
+        
+        // Highlight button
+        document.querySelectorAll('.pdf-highlight-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const answerText = document.querySelector(`.pdf-answer-text[data-question-id="${questionId}"]`);
+                if (answerText) {
+                    btn.dataset.highlightEnabled = btn.dataset.highlightEnabled === 'true' ? 'false' : 'true';
+                    if (btn.dataset.highlightEnabled === 'true') {
+                        answerText.style.cursor = 'text';
+                        answerText.style.userSelect = 'text';
+                        answerText.style.background = '#fefce8';
+                        answerText.addEventListener('mouseup', function highlightHandler() {
+                            setTimeout(() => {
+                                highlightSelectedText(questionId, answerText);
+                            }, 100);
+                        });
+                    } else {
+                        answerText.style.cursor = '';
+                        answerText.style.userSelect = '';
+                        answerText.style.background = '';
+                    }
+                }
+            });
+        });
+        
+        // Listen button
+        document.querySelectorAll('.pdf-listen-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const question = allQuestions.find(q => q.id === questionId);
+                if (question && 'speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    const text = `Question: ${question.question}. Answer: ${question.answer}`;
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 0.9;
+                    window.speechSynthesis.speak(utterance);
+                }
+            });
+        });
+        
+        // Translate button
+        document.querySelectorAll('.pdf-translate-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                const answerText = btn.getAttribute('data-answer-text');
+                
+                btn.disabled = true;
+                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
+                
+                try {
+                    const questionResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(questionText)}&langpair=en|ta`);
+                    const questionData = await questionResponse.json();
+                    const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(answerText)}&langpair=en|ta`);
+                    const answerData = await answerResponse.json();
+                    
+                    if (questionData.responseStatus === 200 && answerData.responseStatus === 200) {
+                        const card = document.querySelector(`.pdf-question-card[data-question-id="${questionId}"]`);
+                        if (card) {
+                            const questionEl = card.querySelector('.pdf-question-card > div:has(strong)');
+                            const answerEl = card.querySelector(`.pdf-answer-text[data-question-id="${questionId}"]`);
+                            if (questionEl && answerEl) {
+                                questionEl.innerHTML = `<strong>Question:</strong> ${questionData.responseData.translatedText}<br><small style="color: #64748b;">(${questionText})</small>`;
+                                answerEl.innerHTML = `${answerData.responseData.translatedText}<br><small style="color: #64748b;">(${answerText})</small>`;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    alert('Translation failed. Please try again.');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate';
+                }
+            });
+        });
+        
+        // Save button
+        document.querySelectorAll('.pdf-save-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const question = allQuestions.find(q => q.id === questionId);
+                if (question) {
+                    const isNowImportant = toggleImportant(questionId, question.question.substring(0, 50));
+                    btn.classList.toggle('active', isNowImportant);
+                    btn.style.background = isNowImportant ? '#fef2f2' : '#fff';
+                    btn.style.color = isNowImportant ? '#ef4444' : '#64748b';
+                    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="${isNowImportant ? '#ef4444' : 'none'}" stroke="${isNowImportant ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg> ${isNowImportant ? 'Saved' : 'Save'}`;
+                }
+            });
+        });
+    }
+    
+    // Display PDF content first - ensure it runs after DOM is ready and questions are loaded
+    function initializeDashboard() {
+        console.log('Initializing dashboard...');
+        
+        // First, display PDF content
+        displayPDFContent();
+        
+        // Then render questions (only if not already rendered)
+        const container = document.getElementById('questionsContainer');
+        if (container) {
+            if (container.children.length === 0) {
+                const initialFiltered = allQuestions;
+                console.log('Rendering questions:', initialFiltered.length);
     renderQuestions(initialFiltered);
+            } else {
+                console.log('Questions already rendered');
+            }
+        }
+    }
+    
+    // Initialize dashboard immediately
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => initializeDashboard(), 100);
+        });
+    } else {
+        // DOM is already ready
+        setTimeout(() => initializeDashboard(), 100);
+    }
+    
+    // Also call after a delay to ensure everything is loaded
+    setTimeout(() => {
+        initializeDashboard();
+    }, 500);
+    
+    // Initial render - show first question in one-by-one view
+    const initialFiltered = allQuestions;
+    currentQuestionIndex = 0; // Start from first question
+    
+    console.log('Initial render - One-by-one view, Questions count:', initialFiltered.length);
+    
+    // Render questions on page load - show first question (only if not already rendered)
+    if (container && container.children.length === 0 && initialFiltered.length > 0) {
+        renderQuestions(initialFiltered);
+    }
     
     function displayPDFStatusCard() {
         const pdfUploaded = localStorage.getItem('ready2study_pdf_uploaded');
@@ -649,6 +1386,96 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Image Viewer Modal Functions
+    window.openImageModal = function(imageSrc, title) {
+        const modal = document.getElementById('imageViewerModal');
+        const img = document.getElementById('imageViewerImg');
+        const titleEl = document.getElementById('imageViewerTitle');
+        
+        if (modal && img) {
+            img.src = imageSrc;
+            if (titleEl) titleEl.textContent = title || 'View Image';
+            modal.classList.add('active');
+        }
+    };
+    
+    const imageViewerClose = document.getElementById('imageViewerClose');
+    const imageViewerModal = document.getElementById('imageViewerModal');
+    
+    if (imageViewerClose) {
+        imageViewerClose.addEventListener('click', () => {
+            imageViewerModal.classList.remove('active');
+        });
+    }
+    
+    if (imageViewerModal) {
+        imageViewerModal.addEventListener('click', (e) => {
+            if (e.target === imageViewerModal) {
+                imageViewerModal.classList.remove('active');
+            }
+        });
+    }
+    
+    // Question Navigation for One-by-One View
+    const prevQuestionBtn = document.getElementById('prevQuestionBtn');
+    const nextQuestionBtn = document.getElementById('nextQuestionBtn');
+    
+    if (prevQuestionBtn) {
+        prevQuestionBtn.addEventListener('click', () => {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                const filteredQuestions = currentFilter === 'all'
+                    ? allQuestions
+                    : currentFilter === 'important'
+                    ? allQuestions.filter(q => isImportant(q.id))
+                    : allQuestions.filter(q => q.marks == currentFilter);
+                renderQuestions(filteredQuestions);
+                
+                // Update button states
+                updateNavigationButtons(filteredQuestions.length);
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+    }
+    
+    if (nextQuestionBtn) {
+        nextQuestionBtn.addEventListener('click', () => {
+            const filteredQuestions = currentFilter === 'all'
+                ? allQuestions
+                : currentFilter === 'important'
+                ? allQuestions.filter(q => isImportant(q.id))
+                : allQuestions.filter(q => q.marks == currentFilter);
+                
+            if (currentQuestionIndex < filteredQuestions.length - 1) {
+                currentQuestionIndex++;
+                renderQuestions(filteredQuestions);
+                
+                // Update button states
+                updateNavigationButtons(filteredQuestions.length);
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+    }
+    
+    // Update navigation button states
+    function updateNavigationButtons(totalQuestions) {
+        if (prevQuestionBtn) {
+            prevQuestionBtn.disabled = currentQuestionIndex === 0;
+            prevQuestionBtn.style.opacity = currentQuestionIndex === 0 ? '0.5' : '1';
+            prevQuestionBtn.style.cursor = currentQuestionIndex === 0 ? 'not-allowed' : 'pointer';
+        }
+        
+        if (nextQuestionBtn) {
+            nextQuestionBtn.disabled = currentQuestionIndex >= totalQuestions - 1;
+            nextQuestionBtn.style.opacity = currentQuestionIndex >= totalQuestions - 1 ? '0.5' : '1';
+            nextQuestionBtn.style.cursor = currentQuestionIndex >= totalQuestions - 1 ? 'not-allowed' : 'pointer';
+        }
+    }
+
     // Filter Click Handlers
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -658,6 +1485,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Filter Data
             currentFilter = btn.dataset.filter;
+            currentQuestionIndex = 0; // Reset to first question
             let filtered;
             
             if (currentFilter === 'all') {
@@ -679,6 +1507,42 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toggleAllBtn) {
         toggleAllBtn.textContent = "Hide All Answers";
     }
+    
+    // Function to show all answers
+    function showAllAnswers() {
+        // Show all regular answer sections
+        const answerSections = document.querySelectorAll('.answer-section');
+        answerSections.forEach(section => {
+            section.classList.add('visible');
+            section.style.display = 'block';
+            section.style.visibility = 'visible';
+            section.style.opacity = '1';
+        });
+        
+        // Show all PDF answer sections
+        const pdfAnswerSections = document.querySelectorAll('.pdf-answer-section');
+        pdfAnswerSections.forEach(section => {
+            section.classList.add('visible');
+            section.style.display = 'block';
+            section.style.visibility = 'visible';
+            section.style.opacity = '1';
+        });
+        
+        const toggleBtns = document.querySelectorAll('.toggle-answer-btn');
+        toggleBtns.forEach(btn => {
+            btn.textContent = "Hide Answer";
+        });
+        
+        if (toggleAllBtn) {
+            toggleAllBtn.textContent = "Hide All Answers";
+        }
+        allAnswersVisible = true;
+    }
+    
+    // Show all answers on page load
+    setTimeout(() => {
+        showAllAnswers();
+    }, 100);
 
     // Toggle All Answers
     if (toggleAllBtn) {
@@ -687,12 +1551,27 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleAllBtn.textContent = allAnswersVisible ? "Hide All Answers" : "Show All Answers";
 
         const answerSections = document.querySelectorAll('.answer-section');
+        const pdfAnswerSections = document.querySelectorAll('.pdf-answer-section');
         const toggleBtns = document.querySelectorAll('.toggle-answer-btn');
 
         answerSections.forEach(section => {
                 if (allAnswersVisible) {
                     section.classList.add('visible');
                     section.style.display = 'block';
+                    section.style.visibility = 'visible';
+                    section.style.opacity = '1';
+                } else {
+                    section.classList.remove('visible');
+                    section.style.display = 'none';
+                }
+        });
+        
+        pdfAnswerSections.forEach(section => {
+                if (allAnswersVisible) {
+                    section.classList.add('visible');
+                    section.style.display = 'block';
+                    section.style.visibility = 'visible';
+                    section.style.opacity = '1';
                 } else {
                     section.classList.remove('visible');
                     section.style.display = 'none';
@@ -711,7 +1590,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        container.innerHTML = '';
+        // Clear container first to remove old elements and prevent duplicate handlers
+        if (container) {
+            container.innerHTML = '';
+        } else {
+            console.error('Questions container not found!');
+            return;
+        }
         
         // Store filtered questions for navigation
         filteredQuestionsList = questions;
@@ -746,32 +1631,77 @@ document.addEventListener('DOMContentLoaded', () => {
             10: questions.filter(q => q.marks === 10)
         };
         
-        // For one-by-one view, show only current question
-        let questionsToRender = [];
-        if (viewMode === 'one-by-one' && questions.length > 0) {
-            // Ensure index is within bounds
+        // Show ONE question at a time - One-by-one view mode
+        container.classList.add('one-by-one-view');
+        const progressEl = document.getElementById('questionProgress');
+        const navControls = document.getElementById('navigationControls');
+        
+        // Ensure currentQuestionIndex is within bounds
             if (currentQuestionIndex >= questions.length) {
                 currentQuestionIndex = 0;
             }
             if (currentQuestionIndex < 0) {
-                currentQuestionIndex = questions.length - 1;
-            }
-            // Show only the current question
-            questionsToRender = [questions[currentQuestionIndex]];
-            container.classList.add('one-by-one-view');
-            updateProgressIndicator();
-            updateNavigationControls();
-            
-            console.log(`Displaying question ${currentQuestionIndex + 1} of ${questions.length}:`, questions[currentQuestionIndex].question.substring(0, 50));
-        } else {
-            // Grid view - show all questions
-            questionsToRender = questions;
-            container.classList.remove('one-by-one-view');
-            const progressEl = document.getElementById('questionProgress');
-            const navControls = document.getElementById('navigationControls');
-            if (progressEl) progressEl.textContent = '';
-            if (navControls) navControls.style.display = 'none';
+            currentQuestionIndex = 0;
         }
+        
+        // Check if we have questions
+        if (questions.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 4rem; color: var(--text-muted);"><h3>No questions available.</h3><p>Please upload a PDF or add questions.</p></div>';
+            return;
+        }
+        
+        // Show only current question
+        let currentQuestion = questions[currentQuestionIndex];
+        
+        if (!currentQuestion) {
+            console.error('No question found at index', currentQuestionIndex, 'Total questions:', questions.length);
+            // Reset to first question
+            currentQuestionIndex = 0;
+            currentQuestion = questions[0];
+            if (!currentQuestion) {
+                container.innerHTML = '<div style="text-align: center; padding: 4rem; color: var(--text-muted);"><h3>Error loading questions.</h3></div>';
+                return;
+            }
+        }
+        
+        let questionsToRender = [currentQuestion];
+        
+        // Update progress indicator
+        if (progressEl) {
+            progressEl.textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+            progressEl.style.display = 'block';
+        } else {
+            console.warn('Progress element not found');
+        }
+        
+        // Show navigation controls
+        if (navControls) {
+            navControls.style.display = 'flex';
+        } else {
+            console.warn('Navigation controls element not found');
+        }
+        
+        // Update navigation button states
+        const prevBtn = document.getElementById('prevQuestionBtn');
+        const nextBtn = document.getElementById('nextQuestionBtn');
+        
+        if (prevBtn) {
+            prevBtn.disabled = currentQuestionIndex === 0;
+            prevBtn.style.opacity = currentQuestionIndex === 0 ? '0.5' : '1';
+            prevBtn.style.cursor = currentQuestionIndex === 0 ? 'not-allowed' : 'pointer';
+        } else {
+            console.warn('Previous button not found');
+        }
+        
+        if (nextBtn) {
+            nextBtn.disabled = currentQuestionIndex >= questions.length - 1;
+            nextBtn.style.opacity = currentQuestionIndex >= questions.length - 1 ? '0.5' : '1';
+            nextBtn.style.cursor = currentQuestionIndex >= questions.length - 1 ? 'not-allowed' : 'pointer';
+        } else {
+            console.warn('Next button not found');
+        }
+        
+        console.log(`✅ Rendering question ${currentQuestionIndex + 1} of ${questions.length}`);
 
         // Ensure container is visible
         if (container) {
@@ -792,15 +1722,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Format answer with line breaks if needed
             const formattedAnswer = q.answer.replace(/\n/g, '<br>');
 
-            // Image HTML if exists
-            const imageHtml = q.image ? `<div class="answer-image-container"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image"></div>` : '';
+            // Image HTML if exists - clickable to expand
+            const imageHtml = q.image ? `<div class="answer-image-container" style="cursor: pointer;" onclick="openImageModal('${q.image}', 'Answer Diagram')"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image" style="cursor: zoom-in;"></div>` : '';
             
-            // Media HTML if exists (user-uploaded) - displayed on the side
+            // Media HTML if exists (user-uploaded) - displayed on the side with click to expand
             const questionMedia = getQuestionMedia(q.id);
             const mediaHtml = questionMedia ? `
-                <div class="question-media-container">
+                <div class="question-media-container" style="cursor: pointer;" onclick="openImageModal('${questionMedia.data}', 'Uploaded Image')">
                     ${questionMedia.type === 'image' 
-                        ? `<img src="${questionMedia.data}" alt="Question representation">`
+                        ? `<img src="${questionMedia.data}" alt="Question representation" style="cursor: zoom-in;">`
                         : `<video src="${questionMedia.data}" controls></video>`
                     }
                 </div>
@@ -825,26 +1755,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 <!-- Question and Answer Display with Mark Badge -->
                 <div style="margin-bottom: 1rem;">
                     <!-- Mark Badge -->
-                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-                        <span style="background: ${markColor}; color: white; padding: 0.4rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.875rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <span style="background: ${markColor}; color: white; padding: 0.25rem 0.6rem; border-radius: 999px; font-weight: 600; font-size: 0.7rem;">
                             ${q.marks} Mark${q.marks > 1 ? 's' : ''}
                         </span>
-                        <span style="color: var(--text-muted); font-size: 0.875rem; font-weight: 600;">
+                        <span style="color: var(--text-muted); font-size: 0.75rem; font-weight: 500;">
                             Q${questionNumber}
                         </span>
                     </div>
                     
                     <!-- Question -->
-                    <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.6; padding: 1.25rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid ${markColor}; margin-bottom: 1rem;">
+                    <div style="font-size: 0.9rem; font-weight: 600; color: #0f172a; line-height: 1.4; padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 3px solid ${markColor}; margin-bottom: 0.75rem;">
                         ${q.question}
+                    </div>
+                    
+                    <!-- Related Images Section -->
+                    <div class="related-images-section" data-question-id="${q.id}" style="margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
+                        <!-- Images will be loaded here -->
                     </div>
                     
                     ${mediaHtml}
                     
                     <!-- Answer -->
                     <div class="answer-section visible" style="display: block !important;">
-                        <div style="font-size: 1.1rem; color: #1e293b; line-height: 1.8; padding: 1.25rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981;">
-                            <span style="color: #10b981; font-weight: 700;">Answer:</span> 
+                        <div style="font-size: 0.875rem; color: #1e293b; line-height: 1.5; padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 3px solid #10b981;">
+                            <span style="color: #10b981; font-weight: 600; font-size: 0.85rem;">Answer:</span> 
                             <span class="answer-text" data-question-id="${q.id}" style="color: #334155;">
                                 ${formattedAnswer}
                             </span>
@@ -854,24 +1789,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                         
                 <!-- Answer Controls -->
-                <div class="answer-controls" style="padding-top: 1rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-start; gap: 0.5rem; flex-wrap: wrap;">
-                    <button class="btn-icon chat-question-btn" title="Ask AI to clarify doubt" data-question-id="${q.id}" style="background: #dbeafe; color: #1e40af; border: 1px solid #60a5fa; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                <div class="answer-controls" style="padding-top: 0.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-start; gap: 0.3rem; flex-wrap: wrap;">
+                    <button class="btn-icon chat-question-btn" title="Ask AI to clarify doubt" data-question-id="${q.id}" style="background: #dbeafe; color: #1e40af; border: 1px solid #60a5fa; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.2rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                         Clarify Doubt
                     </button>
-                    <button class="btn-icon highlight-mode-btn" title="Highlight text" data-question-id="${q.id}" style="background: #fef9c3; color: #854d0e; border: 1px solid #fde047; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                    <button class="btn-icon youtube-btn" title="Video Sources" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" style="background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path></svg>
+                        Sources
+                    </button>
+                    <button class="btn-icon highlight-mode-btn" title="Highlight text" data-question-id="${q.id}" style="background: #fef9c3; color: #854d0e; border: 1px solid #fde047; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
                         Highlight
                     </button>
-                    <button class="btn-icon unhighlight-btn" title="Remove Highlights" data-question-id="${q.id}" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"></path><path d="M6 6l12 12"></path></svg>
-                        Clear
-                    </button>
-                    <button class="btn-icon listen-btn" title="Listen" data-question-id="${q.id}" style="background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                    <button class="btn-icon listen-btn" title="Listen" data-question-id="${q.id}" style="background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
                         Listen
                     </button>
-                    <button class="btn-icon important-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                    <button class="btn-icon stop-listen-btn" title="Stop Listening" data-question-id="${q.id}" style="background: #fecaca; color: #991b1b; border: 1px solid #ef4444; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: none; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                        Stop
+                    </button>
+                    <button class="btn-icon translate-question-btn" title="Translate to Tamil" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" data-answer-text="${q.answer.replace(/"/g, '&quot;')}" style="background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg>
+                        Translate
+                    </button>
+                    <button class="btn-icon untranslate-question-btn" title="Untranslate (Show English)" data-question-id="${q.id}" style="background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: none; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 8l-6 6"></path><path d="M20 14l-6-6 2-3"></path></svg>
+                        Untranslate
+                    </button>
+                    <button class="btn-icon important-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         ${isImportantQuestion ? 'Saved' : 'Save'}
                     </button>
@@ -887,6 +1834,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 answerSection.classList.add('visible');
                 answerSection.style.display = 'block';
                 answerSection.style.visibility = 'visible';
+                answerSection.style.opacity = '1';
             }
             
             // Apply saved highlights - always show them
@@ -896,6 +1844,97 @@ document.addEventListener('DOMContentLoaded', () => {
             
             container.appendChild(card);
             console.log('Question card appended:', q.question.substring(0, 50) + '...');
+            
+            // Load related images for this question
+            loadRelatedImages(q.id, q.question);
+        });
+        
+        // After rendering, ensure all answers are visible and attach all event handlers
+        setTimeout(() => {
+            const allAnswerSections = document.querySelectorAll('.answer-section');
+            allAnswerSections.forEach(section => {
+                section.style.display = 'block';
+                section.style.visibility = 'visible';
+                section.classList.add('visible');
+            });
+            
+            // Ensure all event handlers are attached (they should be attached in the code below)
+            // This is a safety check to ensure everything is connected
+            
+            // Verify all buttons exist
+            const chatBtns = document.querySelectorAll('.chat-question-btn');
+            const youtubeBtns = document.querySelectorAll('.youtube-btn');
+            const highlightBtns = document.querySelectorAll('.highlight-mode-btn');
+            const listenBtns = document.querySelectorAll('.listen-btn');
+            const stopListenBtns = document.querySelectorAll('.stop-listen-btn');
+            const translateBtns = document.querySelectorAll('.translate-question-btn');
+            const untranslateBtns = document.querySelectorAll('.untranslate-question-btn');
+            const importantBtns = document.querySelectorAll('.important-btn');
+            
+            console.log('✅ ALL FEATURES LOADED AND READY:');
+            console.log(`  📊 Total Questions: ${questions.length}`);
+            console.log(`  📝 Current Question: ${currentQuestionIndex + 1} of ${questions.length}`);
+            console.log(`  💬 Chat Buttons: ${chatBtns.length}`);
+            console.log(`  🎥 Sources Buttons: ${youtubeBtns.length}`);
+            console.log(`  🖊️ Highlight Buttons: ${highlightBtns.length}`);
+            console.log(`  🔊 Listen Buttons: ${listenBtns.length}`);
+            console.log(`  ⏹️ Stop Listen Buttons: ${stopListenBtns.length}`);
+            console.log(`  🌐 Translate Buttons: ${translateBtns.length}`);
+            console.log(`  🔄 Untranslate Buttons: ${untranslateBtns.length}`);
+            console.log(`  ❤️ Save Buttons: ${importantBtns.length}`);
+            console.log('\n✅ All features are ready to use!');
+        }, 100);
+
+        // Function to load related images for a question
+        function loadRelatedImages(questionId, questionText) {
+            const imagesSection = document.querySelector(`.related-images-section[data-question-id="${questionId}"]`);
+            if (!imagesSection) return;
+
+            // Extract keywords from question (first 3-4 important words)
+            const words = questionText
+                .split(' ')
+                .filter(word => word.length > 3)
+                .slice(0, 4)
+                .join(' ');
+            
+            if (!words) return;
+
+            // Generate Unsplash image URLs
+            const imageUrls = [
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&education`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&study`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&learning`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&academic`
+            ];
+
+            // Display images
+            imagesSection.innerHTML = imageUrls.map((url, index) => `
+                <div class="related-image-item" style="position: relative; width: 100%; padding-bottom: 75%; border-radius: 0.5rem; overflow: hidden; border: 2px solid var(--border); cursor: pointer; transition: all 0.2s; background: #f1f5f9;">
+                    <img src="${url}" 
+                         alt="Related image ${index + 1}" 
+                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                         loading="lazy"
+                         onerror="this.parentElement.style.display='none'"
+                         onclick="window.open('${url}', '_blank')"
+                         onmouseover="this.style.transform='scale(1.05)'"
+                         onmouseout="this.style.transform='scale(1)'">
+                </div>
+            `).join('');
+        }
+
+        // Add Sources button handlers - Show sidebar with links and images
+        document.querySelectorAll('.youtube-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                console.log('✅ Sources (YouTube) clicked for question:', questionId);
+                const question = allQuestions.find(q => q.id === questionId);
+                
+                if (question) {
+                    showSourcesSidebar(questionText, question);
+                }
+            });
         });
 
         // Add chat button handlers for each question (Clarify Doubt)
@@ -903,6 +1942,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
+                console.log('✅ Clarify Doubt clicked for question:', questionId);
                 const question = allQuestions.find(q => q.id === questionId);
                 if (!question) return;
 
@@ -934,27 +1974,61 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Add attach media button handlers for each question
-        document.querySelectorAll('.attach-media-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const questionId = parseInt(btn.getAttribute('data-question-id'));
-                openMediaModal(questionId);
-            });
-        });
+        // Attach media button removed
 
-        // Add highlight button handlers
+        // Add highlight button handlers - Find answer element within the question card
         document.querySelectorAll('.highlight-mode-btn').forEach(btn => {
             const questionId = parseInt(btn.getAttribute('data-question-id'));
-            const answerText = document.querySelector(`.answer-text[data-question-id="${questionId}"]`);
+            
+            // Find the answer text element within the same question card - try multiple methods
+            const questionCard = btn.closest('.question-card');
+            let answerText = null;
+            
+            if (questionCard) {
+                // Try finding by data attribute first
+                answerText = questionCard.querySelector(`.answer-text[data-question-id="${questionId}"]`);
+                // If not found, try finding any .answer-text in the card
+                if (!answerText) {
+                    answerText = questionCard.querySelector('.answer-text');
+                }
+                // If still not found, try finding within answer-section
+                if (!answerText) {
+                    const answerSection = questionCard.querySelector('.answer-section');
+                    if (answerSection) {
+                        answerText = answerSection.querySelector('.answer-text');
+                    }
+                }
+            }
+            
+            if (!answerText) {
+                console.warn(`Answer text not found for question ${questionId}`, {
+                    questionCard: !!questionCard,
+                    hasAnswerSection: questionCard ? !!questionCard.querySelector('.answer-section') : false
+                });
+                return;
+            }
             
             // Store highlight state per question
             btn.dataset.highlightEnabled = 'false';
             
+            // Store reference to the mouseup handler so we can remove it later
+            let mouseUpHandler = null;
+            
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                console.log('✅ Highlight Text clicked for question:', questionId);
                 
-                if (answerText) {
+                // Re-find answerText in case DOM changed (e.g., after re-rendering)
+                const currentCard = btn.closest('.question-card');
+                const currentAnswerText = currentCard ? 
+                    (currentCard.querySelector(`.answer-text[data-question-id="${questionId}"]`) || 
+                     currentCard.querySelector('.answer-text')) : null;
+                
+                if (!currentAnswerText) {
+                    console.error(`Answer text not found when clicking highlight button for question ${questionId}`);
+                    return;
+                }
+                
                     const isEnabled = btn.dataset.highlightEnabled === 'true';
                     
                     if (!isEnabled) {
@@ -963,62 +2037,125 @@ document.addEventListener('DOMContentLoaded', () => {
                         btn.style.background = '#22c55e';
                         btn.style.color = 'white';
                         btn.style.borderColor = '#16a34a';
-                        answerText.style.cursor = 'text';
-                        answerText.style.userSelect = 'text';
-                        answerText.style.background = '#fefce8';
+                    
+                    // Make the entire answer section selectable
+                    const answerSection = currentAnswerText.closest('.answer-section');
+                    if (answerSection) {
+                        answerSection.style.cursor = 'text';
+                        answerSection.style.userSelect = 'text';
+                        answerSection.style.webkitUserSelect = 'text';
+                        answerSection.style.mozUserSelect = 'text';
+                        answerSection.style.msUserSelect = 'text';
+                    }
+                    
+                    currentAnswerText.style.cursor = 'text';
+                    currentAnswerText.style.userSelect = 'text';
+                    currentAnswerText.style.webkitUserSelect = 'text';
+                    currentAnswerText.style.mozUserSelect = 'text';
+                    currentAnswerText.style.msUserSelect = 'text';
+                    currentAnswerText.style.background = '#fefce8';
+                    
+                    // Also make highlight spans selectable
+                    currentAnswerText.querySelectorAll('.highlight').forEach(span => {
+                        span.style.userSelect = 'text';
+                        span.style.webkitUserSelect = 'text';
+                        span.style.mozUserSelect = 'text';
+                        span.style.msUserSelect = 'text';
+                    });
+                    
+                    // Add mouseup listener for highlighting
+                    // Create handler function
+                    mouseUpHandler = function(e) {
+                        // Don't process if clicking on buttons or controls
+                        if (e.target.closest('button') || e.target.closest('.answer-controls')) {
+                            return;
+                        }
+                        
+                        // Check if highlight mode is still enabled
+                        if (btn.dataset.highlightEnabled !== 'true' && !highlightMode) {
+                            return;
+                        }
+                        
+                        // Small delay to ensure selection is complete
+                        setTimeout(() => {
+                            const selection = window.getSelection();
+                            const selectedText = selection.toString().trim();
+                            
+                            // Only proceed if there's actually selected text
+                            if (selectedText.length > 0) {
+                                // Re-find answerText in case DOM changed
+                                const card = btn.closest('.question-card');
+                                const answerEl = card ? 
+                                    (card.querySelector(`.answer-text[data-question-id="${questionId}"]`) || 
+                                     card.querySelector('.answer-text')) : null;
+                                
+                                if (answerEl) {
+                                    const success = highlightSelectedText(questionId, answerEl);
+                                    if (success) {
+                                        // Keep highlight mode on for multiple highlights
+                                        if (!highlightMode) {
+                                            btn.dataset.highlightEnabled = 'true';
+                                            btn.style.background = '#22c55e';
+                                            btn.style.color = 'white';
+                                            btn.style.borderColor = '#16a34a';
+                                            answerEl.style.background = '#fefce8';
+                                        }
+                                    }
+                                }
+                            }
+                        }, 100); // Increased delay to ensure selection is captured
+                    };
+                    
+                    // Attach to both answer section and answer text for better coverage
+                    if (answerSection) {
+                        answerSection.addEventListener('mouseup', mouseUpHandler, { passive: true });
+                    }
+                    currentAnswerText.addEventListener('mouseup', mouseUpHandler, { passive: true });
                     } else {
                         // Disable highlight mode
                         btn.dataset.highlightEnabled = 'false';
                         btn.style.background = '#fef9c3';
                         btn.style.color = '#854d0e';
                         btn.style.borderColor = '#fde047';
-                        answerText.style.cursor = '';
-                        answerText.style.userSelect = '';
-                        answerText.style.background = '';
+                    
+                    const answerSection = currentAnswerText.closest('.answer-section');
+                    if (answerSection) {
+                        answerSection.style.cursor = '';
+                        answerSection.style.userSelect = '';
+                        answerSection.style.webkitUserSelect = '';
+                        answerSection.style.mozUserSelect = '';
+                        answerSection.style.msUserSelect = '';
+                        
+                        // Remove mouseup listener
+                        if (mouseUpHandler) {
+                            answerSection.removeEventListener('mouseup', mouseUpHandler);
+                        }
                     }
-                }
-            });
-            
-            // Add mouseup listener for highlighting (only when enabled)
-            if (answerText) {
-                answerText.addEventListener('mouseup', () => {
-                    if (btn.dataset.highlightEnabled === 'true') {
-                        const success = highlightSelectedText(questionId, answerText);
-                        if (success) {
-                            // Keep highlight mode on for multiple highlights
+                    
+                    currentAnswerText.style.cursor = '';
+                    currentAnswerText.style.userSelect = '';
+                    currentAnswerText.style.webkitUserSelect = '';
+                    currentAnswerText.style.mozUserSelect = '';
+                    currentAnswerText.style.msUserSelect = '';
+                    currentAnswerText.style.background = '';
+                    
+                    // Remove mouseup listener
+                    if (mouseUpHandler) {
+                        currentAnswerText.removeEventListener('mouseup', mouseUpHandler);
+                        mouseUpHandler = null;
                         }
                     }
                 });
-            }
         });
 
-        // Add unhighlight button handlers
-        document.querySelectorAll('.unhighlight-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const questionId = parseInt(btn.getAttribute('data-question-id'));
-                const highlights = getQuestionHighlights(questionId);
-                if (highlights.length > 0) {
-                    if (confirm('Remove all highlights from this answer?')) {
-                        saveQuestionHighlights(questionId, []);
-                        const filtered = currentFilter === 'all'
-                            ? allQuestions
-                            : currentFilter === 'important'
-                            ? allQuestions.filter(q => isImportant(q.id))
-                            : allQuestions.filter(q => q.marks == currentFilter);
-                        renderQuestions(filtered);
-                    }
-                } else {
-                    alert('No highlights to remove.');
-                }
-            });
-        });
+        // Unhighlight button removed
 
         // Add listen button handlers (text-to-speech)
         document.querySelectorAll('.listen-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
+                console.log('✅ Listen (Text-to-Speech) clicked for question:', questionId);
                 const question = allQuestions.find(q => q.id === questionId);
                 if (question && 'speechSynthesis' in window) {
                     // Stop any ongoing speech
@@ -1029,14 +2166,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     utterance.rate = 0.9;
                     utterance.pitch = 1;
                     
-                    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Stop';
-                    btn.style.background = '#fecaca';
-                    btn.style.color = '#991b1b';
+                    // Hide listen button, show stop button
+                    btn.style.display = 'none';
+                    const stopBtn = document.querySelector(`.stop-listen-btn[data-question-id="${questionId}"]`);
+                    if (stopBtn) {
+                        stopBtn.style.display = 'flex';
+                    }
                     
                     utterance.onend = () => {
-                        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg> Listen';
-                        btn.style.background = '#ede9fe';
-                        btn.style.color = '#6d28d9';
+                        // Show listen button, hide stop button
+                        btn.style.display = 'flex';
+                        if (stopBtn) {
+                            stopBtn.style.display = 'none';
+                        }
+                    };
+                    
+                    utterance.onerror = () => {
+                        // Show listen button, hide stop button on error
+                        btn.style.display = 'flex';
+                        if (stopBtn) {
+                            stopBtn.style.display = 'none';
+                        }
                     };
                     
                     window.speechSynthesis.speak(utterance);
@@ -1046,11 +2196,159 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        // Add stop listen button handlers
+        document.querySelectorAll('.stop-listen-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                console.log('✅ Stop Listening clicked for question:', questionId);
+                
+                // Stop speech
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                }
+                
+                // Hide stop button, show listen button
+                btn.style.display = 'none';
+                const listenBtn = document.querySelector(`.listen-btn[data-question-id="${questionId}"]`);
+                if (listenBtn) {
+                    listenBtn.style.display = 'flex';
+                }
+            });
+        });
+
+        // Add translate question button handlers - Translate FULL answer to Tamil
+        document.querySelectorAll('.translate-question-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                const answerText = btn.getAttribute('data-answer-text');
+                console.log('✅ Translate to Tamil (full answer) clicked for question:', questionId);
+                
+                // Show loading state
+                btn.disabled = true;
+                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
+                
+                try {
+                    // Find the question card
+                    const questionCard = document.querySelector(`.question-card:has(.answer-controls .translate-question-btn[data-question-id="${questionId}"])`);
+                    if (!questionCard) {
+                        throw new Error('Question card not found');
+                    }
+                    
+                    const answerElement = questionCard.querySelector('.answer-text');
+                    
+                    if (!answerElement) {
+                        throw new Error('Answer element not found');
+                    }
+                    
+                    // Get full answer text - remove HTML and get clean text
+                    let fullAnswerText = '';
+                    if (answerElement.textContent) {
+                        fullAnswerText = answerElement.textContent.trim();
+                    } else if (answerText) {
+                        fullAnswerText = answerText.trim();
+                    } else {
+                        throw new Error('Could not find answer text');
+                    }
+                    
+                    // Remove "Answer:" label if present
+                    fullAnswerText = fullAnswerText.replace(/^Answer:\s*/i, '').trim();
+                    
+                    if (!fullAnswerText) {
+                        throw new Error('Answer text is empty');
+                    }
+                    
+                    // Translate the FULL answer text to Tamil
+                    const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(fullAnswerText)}&langpair=en|ta`);
+                    const answerData = await answerResponse.json();
+                    
+                    if (answerData.responseStatus === 200 && answerData.responseData.translatedText) {
+                        const tamilTranslation = answerData.responseData.translatedText;
+                        
+                        // Store original answer for reverting
+                        answerElement.setAttribute('data-original-text', fullAnswerText);
+                        answerElement.setAttribute('data-translated-text', tamilTranslation);
+                        
+                        // Update answer display - Show Tamil translation prominently
+                        answerElement.innerHTML = `
+                            <div style="padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 0.75rem; font-family: 'Noto Sans Tamil', sans-serif; font-size: 1rem; line-height: 1.8; color: #1e293b;">
+                                <strong style="color: #10b981; font-size: 1.1rem; display: block; margin-bottom: 0.5rem;">தமிழ்:</strong>
+                                <div style="font-size: 1rem; line-height: 1.8;">${escapeHtml(tamilTranslation)}</div>
+                            </div>
+                            <div style="padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #64748b; font-size: 0.9rem; line-height: 1.6; color: #64748b;">
+                                <strong style="color: #64748b; display: block; margin-bottom: 0.5rem;">English:</strong>
+                                <div>${escapeHtml(fullAnswerText)}</div>
+                            </div>
+                        `;
+                        
+                        // Show untranslate button, hide translate button
+                        const untranslateBtn = questionCard.querySelector(`.untranslate-question-btn[data-question-id="${questionId}"]`);
+                        if (untranslateBtn) {
+                            untranslateBtn.style.display = 'flex';
+                        }
+                        btn.style.display = 'none';
+                        
+                        console.log(`✅ Full answer translated to Tamil for question ${questionId}`);
+                    } else {
+                        throw new Error('Translation failed: ' + (answerData.responseDetails || 'Unknown error'));
+                    }
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    alert('Translation failed. Please try again. Error: ' + error.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate';
+                }
+            });
+        });
+
+        // Add untranslate button handlers
+        document.querySelectorAll('.untranslate-question-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                
+                // Find the question card
+                const questionCard = document.querySelector(`.question-card:has(.answer-controls .untranslate-question-btn[data-question-id="${questionId}"])`);
+                if (questionCard) {
+                    const questionElement = questionCard.querySelector('.question-card > div > div:has(strong)');
+                    const answerElement = questionCard.querySelector('.answer-text');
+                    
+                    // Restore original question text
+                    if (questionElement && questionElement.getAttribute('data-original-text')) {
+                        questionElement.textContent = questionElement.getAttribute('data-original-text');
+                        questionElement.removeAttribute('data-original-text');
+                        questionElement.removeAttribute('data-translated-text');
+                    }
+                    
+                    // Restore original answer text
+                    if (answerElement && answerElement.getAttribute('data-original-text')) {
+                        answerElement.textContent = answerElement.getAttribute('data-original-text');
+                        answerElement.removeAttribute('data-original-text');
+                        answerElement.removeAttribute('data-translated-text');
+                    }
+                    
+                    // Show translate button, hide untranslate button
+                    const translateBtn = questionCard.querySelector(`.translate-question-btn[data-question-id="${questionId}"]`);
+                    if (translateBtn) {
+                        translateBtn.style.display = 'flex';
+                        translateBtn.disabled = false;
+                        translateBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate';
+                    }
+                    btn.style.display = 'none';
+                    console.log('✅ Untranslate clicked - reverted to English');
+                }
+            });
+        });
+
         // Add important button handlers
         document.querySelectorAll('.important-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
+                console.log('✅ Save as Important clicked for question:', questionId);
                 const isNowImportant = toggleImportant(questionId);
                 
                 // Update button appearance
@@ -1160,12 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Validate file size (max 5MB for images, 20MB for videos)
-            const maxSize = file.type.startsWith('image/') ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
-            if (file.size > maxSize) {
-                alert(`File size exceeds ${file.type.startsWith('image/') ? '5MB' : '20MB'}. Please upload a smaller file.`);
-                    return;
-            }
+            // File size validation removed - users can upload files of any size
 
             currentMediaFile = file;
             const reader = new FileReader();
@@ -1313,54 +2606,107 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Send message function
-    function sendMessage() {
+    // ChatGPT API Configuration
+    // Note: For production, store API key securely on backend
+    // For now, user can set it in localStorage: localStorage.setItem('chatgpt_api_key', 'your-api-key')
+    const CHATGPT_API_KEY = localStorage.getItem('chatgpt_api_key') || '';
+    const CHATGPT_API_URL = 'https://api.openai.com/v1/chat/completions';
+
+    // Send message function with ChatGPT integration
+    async function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
 
         addMessage(message, 'user');
         chatInput.value = '';
 
-        setTimeout(() => {
+        // Disable input while processing
+        if (chatInput) chatInput.disabled = true;
+        if (chatSend) chatSend.disabled = true;
+
+        // Show typing indicator
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'chat-message bot-message';
+        typingIndicator.id = 'typing-indicator';
+        typingIndicator.innerHTML = `
+            <div class="message-content">
+                <p style="color: var(--text-muted); font-style: italic;">ChatGPT is thinking...</p>
+            </div>
+        `;
+        chatMessages.appendChild(typingIndicator);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
+            
+            // Build context for ChatGPT
+            let systemPrompt = 'You are a helpful study assistant helping students understand exam questions. Provide clear, detailed explanations in a friendly and encouraging manner.';
+            let userPrompt = message;
+            
+            if (question) {
+                systemPrompt = `You are a helpful study assistant. A student is asking about this ${question.marks}-mark question: "${question.question}". The correct answer is: "${question.answer}". Help them understand the question and answer clearly. Provide explanations in simple terms, give examples if helpful, and encourage their learning.`;
+                userPrompt = `Question: ${question.question}\n\nAnswer: ${question.answer}\n\nStudent's question: ${message}`;
+            }
+
+            // Call ChatGPT API
+            if (CHATGPT_API_KEY) {
+                const response = await fetch(CHATGPT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${CHATGPT_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-3.5-turbo',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const botResponse = data.choices[0].message.content;
+                
+                // Remove typing indicator
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+                
+                addMessage(botResponse, 'bot');
+                } else {
+                // Fallback: Use local responses if no API key
+                throw new Error('No API key configured');
+            }
+        } catch (error) {
+            console.error('ChatGPT API Error:', error);
+            
+            // Remove typing indicator
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+            
+            // Fallback to local responses
             let botResponse = '';
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
             
             if (question) {
-                if (message.toLowerCase().includes('explain') || message.toLowerCase().includes('understand')) {
-                    botResponse = `**Detailed Explanation:**\n\n${question.question}\n\n**Answer:**\n${question.answer}\n\nDoes this clarify your doubt? Feel free to ask for specific parts if you need further clarification!`;
-                } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution')) {
-                    const briefAnswer = question.answer.length > 200 
-                        ? question.answer.substring(0, 200) + '...' 
-                        : question.answer;
-                    botResponse = `**Brief Answer:**\n\n${briefAnswer}\n\nThis is a ${question.marks}-mark question. To understand it better, ask me to explain any specific part!`;
-                } else if (message.toLowerCase().includes('hint') || message.toLowerCase().includes('help') || message.toLowerCase().includes('stuck')) {
-                    botResponse = `**Hint:**\n\nThis is a ${question.marks}-mark question. Key areas to focus on:\n- Understand the core concept\n- Break down the problem into smaller parts\n- Connect to real-world examples\n\nWould you like me to explain any specific part of "${question.question}"?`;
-                } else if (message.toLowerCase().includes('difficult') || message.toLowerCase().includes('hard') || message.toLowerCase().includes('confusing')) {
-                    botResponse = `**Don't worry!** Many students find this challenging. Let me break it down:\n\n**Question:** ${question.question}\n\n**Simplified Explanation:** ${question.answer.substring(0, 100)}...\n\nWhat specific part confuses you the most? I can explain that in simpler terms!`;
-                } else if (message.toLowerCase().includes('example')) {
-                    botResponse = `**Real-World Example:**\n\nThinking about ${question.question}:\n- It relates to practical situations in your course\n- The key concept is crucial for exams\n\n**The Answer Explains:**\n${question.answer}\n\nDoes this help you see the connection?`;
-                } else if (message.toLowerCase().includes('marks') || message.toLowerCase().includes('important')) {
-                    botResponse = `**Question Value:** ${question.marks} mark${question.marks > 1 ? 's' : ''}\n\n**Why It's Important:**\nThis question tests your understanding of core concepts that appear frequently in exams.\n\n**Answer:**\n${question.answer}\n\nMake sure to remember this concept!`;
-                } else {
-                    botResponse = `**Question:** ${question.question}\n\n**Analysis:**\nYou asked: "${message}"\n\n**Answer:**\n${question.answer}\n\nLet me know if you need clarification on any part!`;
-                }
+                botResponse = `**Question:** ${question.question}\n\n**Answer:**\n${question.answer}\n\n**Note:** To get AI-powered explanations, please add your ChatGPT API key. For now, here's the answer. Feel free to ask specific questions!\n\n**Your Question:** ${message}\n\nI can help explain any part of this question in detail. What would you like to know more about?`;
             } else {
-                if (message.toLowerCase().includes('all questions') || message.toLowerCase().includes('questions')) {
-                    botResponse = `You have ${allQuestions.length} questions in total. You can filter them by marks (1, 2, 3, or 10 marks), view important questions, or click "Clarify Doubt" on any question for detailed help. Which question would you like to explore?`;
-                } else if (message.toLowerCase().includes('important')) {
-                    const importantCount = getImportantQuestions().length;
-                    botResponse = `You have ${importantCount} important question${importantCount !== 1 ? 's' : ''} marked. These are the ones you found challenging or want to review later. Use "Clarify Doubt" button to get help on any of them!`;
-                } else if (message.toLowerCase().includes('test') || message.toLowerCase().includes('practice')) {
-                    botResponse = `**Practice Test Details:**\n- Total Marks: 20\n- Time: 60 minutes\n- Pattern: 1×2 marks, 2×1 marks, 2×3 marks, 1×10 marks\n- Text/Voice Input available\n\nGo to dashboard and click "Start Practice Test" when ready. Good luck!`;
-                } else if (message.toLowerCase().includes('help') || message.toLowerCase().includes('how')) {
-                    botResponse = `**How I Can Help You:**\n✓ Clarify difficult questions\n✓ Explain concepts in simple terms\n✓ Provide hints and tips\n✓ Give real-world examples\n✓ Answer test-related questions\n\nClick "Clarify Doubt" on any question card, and I'll help you understand it better!`;
-                } else {
-                    botResponse = `I'm your AI study assistant! I can:\n- Explain any question in simpler terms\n- Provide hints when you're stuck\n- Give real-world examples\n- Clarify confusing concepts\n\nClick "Clarify Doubt" on any question to get specific help!`;
-                }
+                botResponse = `I'm here to help! However, to get AI-powered responses, please configure your ChatGPT API key.\n\n**To add API key:**\nOpen browser console and run:\nlocalStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n\n**Your Question:** ${message}\n\nHow can I help you with your studies?`;
             }
             
             addMessage(botResponse, 'bot');
-        }, 500);
+        } finally {
+            // Re-enable input
+            if (chatInput) chatInput.disabled = false;
+            if (chatSend) chatSend.disabled = false;
+            if (chatInput) chatInput.focus();
+        }
     }
 
     // Add message to chat
@@ -1563,5 +2909,145 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save the PDF
         const fileName = `Ready2Study_Questions_${new Date().toISOString().split('T')[0]}.pdf`;
         doc.save(fileName);
+    }
+
+    // Sources Sidebar Functions
+    function showSourcesSidebar(questionText, question) {
+        const sidebar = document.getElementById('sourcesSidebar');
+        const overlay = document.getElementById('sourcesSidebarOverlay');
+        const loading = document.getElementById('sourcesLoading');
+        const content = document.getElementById('sourcesContent');
+        const videoLinks = document.getElementById('videoLinks');
+        const articleLinks = document.getElementById('articleLinks');
+        const relatedImages = document.getElementById('relatedImages');
+
+        // Show sidebar and overlay
+        sidebar.classList.add('active');
+        overlay.classList.add('active');
+        
+        // Show loading
+        loading.style.display = 'flex';
+        content.style.display = 'none';
+
+        // Generate sources based on question text
+        setTimeout(() => {
+            generateSources(questionText, question, videoLinks, articleLinks, relatedImages);
+            loading.style.display = 'none';
+            content.style.display = 'block';
+        }, 500);
+    }
+
+    function generateSources(questionText, question, videoLinksEl, articleLinksEl, imagesEl) {
+        // Extract keywords from question (first 5-7 words)
+        const words = questionText.split(' ').slice(0, 7).join(' ');
+        const searchQuery = encodeURIComponent(words);
+        const tamilQuery = encodeURIComponent(`${words} தமிழ்`);
+
+        // Generate YouTube video links
+        const youtubeLinks = [
+            {
+                title: `YouTube: ${words} - Tamil Explanation`,
+                url: `https://www.youtube.com/results?search_query=${tamilQuery}+explanation+tutorial`,
+                icon: 'youtube'
+            },
+            {
+                title: `YouTube: ${words} - Educational Video`,
+                url: `https://www.youtube.com/results?search_query=${searchQuery}+educational`,
+                icon: 'youtube'
+            },
+            {
+                title: `YouTube: ${words} - Lecture`,
+                url: `https://www.youtube.com/results?search_query=${searchQuery}+lecture`,
+                icon: 'youtube'
+            }
+        ];
+
+        videoLinksEl.innerHTML = youtubeLinks.map(link => `
+            <a href="${link.url}" target="_blank" class="source-link">
+                <div class="source-link-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path>
+                    </svg>
+                </div>
+                <div class="source-link-content">
+                    <div class="source-link-title">${link.title}</div>
+                    <div class="source-link-url">${link.url.replace('https://www.', '').substring(0, 50)}...</div>
+                </div>
+            </a>
+        `).join('');
+
+        // Generate article links (Wikipedia, educational sites)
+        const articleLinks = [
+            {
+                title: `Wikipedia: ${words}`,
+                url: `https://en.wikipedia.org/wiki/Special:Search?search=${searchQuery}`,
+                icon: 'wikipedia'
+            },
+            {
+                title: `Khan Academy: ${words}`,
+                url: `https://www.khanacademy.org/search?page_search_query=${searchQuery}`,
+                icon: 'article'
+            },
+            {
+                title: `Google Scholar: ${words}`,
+                url: `https://scholar.google.com/scholar?q=${searchQuery}`,
+                icon: 'article'
+            },
+            {
+                title: `Britannica: ${words}`,
+                url: `https://www.britannica.com/search?query=${searchQuery}`,
+                icon: 'article'
+            }
+        ];
+
+        articleLinksEl.innerHTML = articleLinks.map(link => `
+            <a href="${link.url}" target="_blank" class="source-link">
+                <div class="source-link-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 17H20v-2.5a2.5 2.5 0 0 0-2.5-2.5H9"></path>
+                        <path d="M9 12H4V6.5A2.5 2.5 0 0 1 6.5 4H20v5.5a2.5 2.5 0 0 1-2.5 2.5H9z"></path>
+                    </svg>
+                </div>
+                <div class="source-link-content">
+                    <div class="source-link-title">${link.title}</div>
+                    <div class="source-link-url">${link.url.replace('https://www.', '').replace('https://', '').substring(0, 50)}...</div>
+                </div>
+            </a>
+        `).join('');
+
+        // Generate related images (using Unsplash API with keywords)
+        const imageKeywords = words.split(' ').slice(0, 3).join(' ');
+        const imageUrls = [
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&education`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&study`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&learning`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&academic`
+        ];
+
+        imagesEl.innerHTML = imageUrls.map((url, index) => `
+            <div class="source-image" onclick="window.open('${url}', '_blank')">
+                <img src="${url}" alt="Related image ${index + 1}" loading="lazy" onerror="this.src='https://via.placeholder.com/400x300?text=Image+${index + 1}'">
+            </div>
+        `).join('');
+    }
+
+    // Close sources sidebar handlers
+    const closeSourcesBtn = document.getElementById('closeSourcesSidebar');
+    const sourcesOverlay = document.getElementById('sourcesSidebarOverlay');
+    const sourcesSidebar = document.getElementById('sourcesSidebar');
+
+    if (closeSourcesBtn) {
+        closeSourcesBtn.addEventListener('click', () => {
+            sourcesSidebar.classList.remove('active');
+            sourcesOverlay.classList.remove('active');
+        });
+    }
+
+    if (sourcesOverlay) {
+        sourcesOverlay.addEventListener('click', () => {
+            sourcesSidebar.classList.remove('active');
+            sourcesOverlay.classList.remove('active');
+        });
     }
 });

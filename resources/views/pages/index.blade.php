@@ -97,14 +97,6 @@
                 return;
             }
 
-            // Validate file size (max 10MB)
-            const maxSize = 10 * 1024 * 1024; // 10MB in bytes
-            if (file.size > maxSize) {
-                alert('File size exceeds 10MB. Please upload a smaller file.');
-                fileInput.value = '';
-                return;
-            }
-
             // Display file information
             const fileSize = (file.size / 1024 / 1024).toFixed(2); // Convert to MB
             fileInfo.innerHTML = `
@@ -159,7 +151,7 @@
             }
         };
 
-        // Function to extract text from PDF
+        // Function to extract text from PDF - reads ALL pages completely
         async function extractTextFromPDF(arrayBuffer) {
             try {
                 // Set up PDF.js worker
@@ -172,14 +164,41 @@
                 let fullText = '';
                 const totalPages = pdf.numPages;
                 
-                // Extract text from each page
+                console.log(`Reading PDF with ${totalPages} pages...`);
+                
+                // Extract text from EACH AND EVERY page completely
                 for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    fullText += pageText + '\n\n';
+                    try {
+                        const page = await pdf.getPage(pageNum);
+                        const textContent = await page.getTextContent();
+                        
+                        // Better extraction that preserves mathematical formulas and equations
+                        let pageText = '';
+                        for (let item of textContent.items) {
+                            // Preserve spacing and special characters for math
+                            const text = item.str || '';
+                            // Check if it's a mathematical expression (contains numbers, operators, etc.)
+                            if (text.match(/[0-9+\-*/=()^√∑∫π]/) || text.trim().length > 0) {
+                                pageText += text + (item.hasEOL ? '\n' : ' ');
+                            } else {
+                                pageText += text + ' ';
+                            }
+                        }
+                        
+                        // Add page separator
+                        fullText += `\n--- Page ${pageNum} of ${totalPages} ---\n\n`;
+                        fullText += pageText.trim();
+                        fullText += '\n\n';
+                        
+                        console.log(`Page ${pageNum}/${totalPages} extracted (${pageText.length} characters)`);
+                    } catch (pageError) {
+                        console.error(`Error reading page ${pageNum}:`, pageError);
+                        // Continue with next page even if one fails
+                        fullText += `\n--- Page ${pageNum} (Error reading) ---\n\n`;
+                    }
                 }
                 
+                console.log(`PDF extraction complete. Total text length: ${fullText.length} characters`);
                 return fullText.trim();
             } catch (error) {
                 console.error('Error extracting text from PDF:', error);
@@ -187,29 +206,62 @@
             }
         }
 
-        // Function to generate questions from PDF content
+        // Function to generate questions from PDF content - includes mathematical problems
         function generateQuestionsFromPDF(pdfText) {
-            // Split text into sentences and paragraphs
-            const paragraphs = pdfText.split(/\n\s*\n/).filter(p => p.trim().length > 50);
-            const sentences = pdfText.match(/[^.!?]+[.!?]+/g) || [];
+            console.log('Generating questions from PDF content...');
+            console.log('PDF text length:', pdfText.length);
+            
+            // Split text into sentences and paragraphs - preserve mathematical content
+            const paragraphs = pdfText.split(/\n\s*\n/).filter(p => p.trim().length > 30);
+            
+            // Also extract mathematical problems (lines with equations, formulas, calculations)
+            const mathPatterns = pdfText.match(/(?:[0-9]+\s*[+\-*/=]\s*[0-9]+|\([^)]+\)\s*[+\-*/=]|√[0-9]+|∫|∑|π|sin|cos|tan|log|ln)[^.!?]*[.!?]?/g) || [];
             
             const questions = [];
             let questionId = 1;
             
-            // Generate 1-mark questions (simple definitions, short answers)
-            const oneMarkCount = Math.min(2, Math.floor(paragraphs.length / 4));
-            for (let i = 0; i < oneMarkCount && i < paragraphs.length; i++) {
+            console.log(`Found ${paragraphs.length} paragraphs and ${mathPatterns.length} mathematical expressions`);
+            
+            // Generate 1-mark questions (simple definitions, short answers, mathematical problems)
+            // First, extract mathematical problems
+            let mathIndex = 0;
+            const oneMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 4)));
+            
+            // Add mathematical problems as 1-mark questions
+            for (let i = 0; i < Math.min(2, mathPatterns.length) && mathIndex < oneMarkCount; i++) {
+                const mathProblem = mathPatterns[i].trim();
+                if (mathProblem.length > 10 && mathProblem.length < 200) {
+                    // Extract the mathematical expression
+                    const mathExpr = mathProblem.match(/([0-9+\-*/=()^√∑∫π\s]+)/)?.[0] || mathProblem;
+                    const context = mathProblem.replace(mathExpr, '').trim();
+                    
+                    questions.push({
+                        id: questionId++,
+                        question: context ? `${context}\n\nSolve: ${mathExpr}` : `Solve: ${mathExpr}`,
+                        answer: mathProblem, // Include the full problem with solution if available
+                        marks: 1,
+                        examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    });
+                    mathIndex++;
+                }
+            }
+            
+            // Generate regular 1-mark questions from paragraphs
+            for (let i = 0; i < oneMarkCount - mathIndex && i < paragraphs.length; i++) {
                 const para = paragraphs[i].trim();
-                if (para.length > 100) {
-                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                if (para.length > 50) {
+                    // Preserve mathematical content in the paragraph
+                    const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
                     if (sentences.length > 0) {
                         const firstSentence = sentences[0].trim();
-                        const keyTerm = firstSentence.split(' ').slice(0, 3).join(' ');
-                        const answer = firstSentence.substring(0, 150);
+                        // Check if it contains math
+                        const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(firstSentence);
+                        const keyTerm = hasMath ? firstSentence.substring(0, 100) : firstSentence.split(' ').slice(0, 5).join(' ');
+                        const answer = para.substring(0, Math.min(200, para.length));
                         
                         questions.push({
                             id: questionId++,
-                            question: `What is ${keyTerm}?`,
+                            question: hasMath ? firstSentence : `What is ${keyTerm}?`,
                             answer: answer,
                             marks: 1,
                             examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -218,19 +270,37 @@
                 }
             }
             
-            // Generate 2-mark questions (explanations)
-            const twoMarkCount = Math.min(2, Math.floor(paragraphs.length / 3));
-            for (let i = oneMarkCount; i < oneMarkCount + twoMarkCount && i < paragraphs.length; i++) {
+            // Generate 2-mark questions (explanations, mathematical problems with steps)
+            const twoMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 3)));
+            let mathUsed = 0;
+            
+            // Add mathematical problems with steps as 2-mark questions
+            for (let i = Math.min(2, mathPatterns.length); i < Math.min(4, mathPatterns.length) && mathUsed < Math.floor(twoMarkCount / 2); i++) {
+                const mathProblem = mathPatterns[i].trim();
+                if (mathProblem.length > 20 && mathProblem.length < 300) {
+                    questions.push({
+                        id: questionId++,
+                        question: `Solve the following with steps:\n${mathProblem}`,
+                        answer: mathProblem, // Include solution steps if available
+                        marks: 2,
+                        examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    });
+                    mathUsed++;
+                }
+            }
+            
+            // Generate regular 2-mark questions
+            for (let i = oneMarkCount; i < oneMarkCount + twoMarkCount - mathUsed && i < paragraphs.length; i++) {
                 const para = paragraphs[i].trim();
-                if (para.length > 150) {
-                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
+                if (para.length > 100) {
+                    const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
                     if (sentences.length >= 2) {
-                        const questionText = sentences[0].trim().substring(0, 100) + '?';
-                        const answer = sentences.slice(0, 2).join(' ').substring(0, 200);
+                        const questionText = sentences[0].trim();
+                        const answer = sentences.slice(0, Math.min(3, sentences.length)).join(' ').substring(0, 250);
                         
                         questions.push({
                             id: questionId++,
-                            question: `Explain: ${questionText}`,
+                            question: questionText.length > 100 ? questionText.substring(0, 100) + '...' : questionText,
                             answer: answer,
                             marks: 2,
                             examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -239,20 +309,24 @@
                 }
             }
             
-            // Generate 3-mark questions (detailed explanations)
-            const threeMarkCount = Math.min(2, Math.floor(paragraphs.length / 2));
+            // Generate 3-mark questions (detailed explanations, complex mathematical problems)
+            const threeMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 2)));
+            
             for (let i = oneMarkCount + twoMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount && i < paragraphs.length; i++) {
                 const para = paragraphs[i].trim();
-                if (para.length > 200) {
-                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
-                    if (sentences.length >= 3) {
-                        const firstWords = sentences[0].trim().split(' ').slice(0, 5).join(' ');
-                        const questionText = `Describe ${firstWords} in detail.`;
-                        const answer = sentences.slice(0, 3).join(' ').substring(0, 300);
+                if (para.length > 150) {
+                    const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
+                    const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(para);
+                    
+                    if (sentences.length >= 2) {
+                        const questionText = hasMath 
+                            ? sentences[0].trim() 
+                            : `Describe ${sentences[0].trim().split(' ').slice(0, 5).join(' ')} in detail.`;
+                        const answer = sentences.slice(0, Math.min(4, sentences.length)).join(' ').substring(0, 350);
                         
                         questions.push({
                             id: questionId++,
-                            question: questionText,
+                            question: questionText.length > 150 ? questionText.substring(0, 150) + '...' : questionText,
                             answer: answer,
                             marks: 3,
                             examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -261,16 +335,21 @@
                 }
             }
             
-            // Generate 10-mark questions (comprehensive answers)
-            const tenMarkCount = Math.min(2, Math.floor(paragraphs.length / 1.5));
+            // Generate 10-mark questions (comprehensive answers, complex mathematical derivations)
+            const tenMarkCount = Math.min(2, Math.max(1, Math.floor(paragraphs.length / 1.5)));
+            
             for (let i = oneMarkCount + twoMarkCount + threeMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount + tenMarkCount && i < paragraphs.length; i++) {
                 const para = paragraphs[i].trim();
-                if (para.length > 300) {
-                    const sentences = para.match(/[^.!?]+[.!?]+/g) || [];
-                    if (sentences.length >= 5) {
-                        const firstWords = sentences[0].trim().split(' ').slice(0, 6).join(' ');
-                        const questionText = `Write a comprehensive answer about ${firstWords}.`;
-                        const answer = sentences.slice(0, Math.min(8, sentences.length)).join(' ').substring(0, 500);
+                if (para.length > 200) {
+                    const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
+                    const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(para);
+                    
+                    if (sentences.length >= 3) {
+                        const firstSentence = sentences[0].trim();
+                        const questionText = hasMath 
+                            ? firstSentence.substring(0, 200)
+                            : `Write a comprehensive answer about ${firstSentence.split(' ').slice(0, 6).join(' ')}.`;
+                        const answer = sentences.slice(0, Math.min(10, sentences.length)).join(' ').substring(0, 600);
                         
                         questions.push({
                             id: questionId++,
@@ -282,6 +361,8 @@
                     }
                 }
             }
+            
+            console.log(`Generated ${questions.length} questions total`);
             
             // If not enough questions generated, add some from mock data
             if (questions.length < 4) {
@@ -320,32 +401,36 @@
             const progressBar = document.getElementById('progressBar');
             const progressText = document.getElementById('progressText');
             
-            try {
-                // Step 1: Reading PDF
-                loaderTitle.textContent = 'Reading PDF Document...';
-                loaderMessage.textContent = 'Extracting text and content from PDF';
-                progressBar.style.width = '20%';
-                progressText.textContent = '20% - Reading PDF...';
+                try {
+                    // Step 1: Reading PDF - ALL PAGES
+                    loaderTitle.textContent = 'Reading PDF Document...';
+                    loaderMessage.textContent = 'Reading all pages and extracting complete content including mathematical formulas';
+                    
+                    // Extract text from PDF - this now reads ALL pages
+                    const pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
+                    
+                    // Update progress after reading all pages
+                    progressBar.style.width = '30%';
+                    progressText.textContent = '30% - All pages read successfully';
+                    
+                    console.log('PDF Text Extracted from all pages:', pdfText.substring(0, 500) + '...');
+                    console.log('Total PDF content length:', pdfText.length, 'characters');
                 
-                // Extract text from PDF
-                const pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
-                console.log('PDF Text Extracted:', pdfText.substring(0, 500) + '...');
-                
-                // Step 2: Analyzing Content
-                loaderTitle.textContent = 'Analyzing Content...';
-                loaderMessage.textContent = 'Identifying key concepts and topics';
-                progressBar.style.width = '40%';
-                progressText.textContent = '40% - Analyzing content...';
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Step 3: Generating Questions
-                loaderTitle.textContent = 'Generating Questions...';
-                loaderMessage.textContent = 'Creating questions organized by marks (1, 2, 3, 10)';
-                progressBar.style.width = '60%';
-                progressText.textContent = '60% - Generating questions...';
-                
-                const pdfQuestions = generateQuestionsFromPDF(pdfText);
+                    // Step 2: Analyzing Content
+                    loaderTitle.textContent = 'Analyzing Content...';
+                    loaderMessage.textContent = 'Identifying key concepts, topics, and mathematical problems';
+                    progressBar.style.width = '50%';
+                    progressText.textContent = '50% - Analyzing content and mathematical expressions...';
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Step 3: Generating Questions (including mathematical problems)
+                    loaderTitle.textContent = 'Generating Questions...';
+                    loaderMessage.textContent = 'Creating questions organized by marks (1, 2, 3, 10) including mathematical sums and formulas';
+                    progressBar.style.width = '70%';
+                    progressText.textContent = '70% - Generating questions and mathematical problems...';
+                    
+                    const pdfQuestions = generateQuestionsFromPDF(pdfText);
                 
                 // Step 4: Organizing by Marks
                 loaderTitle.textContent = 'Organizing by Marks...';
@@ -410,4 +495,5 @@
     });
 </script>
 @endpush
+
 

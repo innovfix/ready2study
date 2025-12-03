@@ -28,8 +28,8 @@ const mockQuestions = [
         id: 4,
         marks: 2,
         examDate: "Nov 2021",
-        question: "Explain the law of demand.",
-        answer: "The law of demand states that, all else being equal, as the price of a good increases, quantity demanded decreases; conversely, as the price of a good decreases, quantity demanded increases."
+        question: "22 Chapter 2 Basic Science Concepts The following material is provided as basic background information necessary to understand the components and processes associated with drinking water systems",
+        answer: "22 Chapter 2 Basic Science Concepts The following material is provided as basic background information necessary to understand the components and processes associated with drinking water systems"
     },
     {
         id: 5,

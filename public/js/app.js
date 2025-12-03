@@ -26,9 +26,48 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load Student Info
     const userData = JSON.parse(localStorage.getItem('ready2study_user'));
     if (userData) {
-        document.getElementById('studentHeaderInfo').style.display = 'block';
-        document.getElementById('headerName').textContent = userData.name;
-        document.getElementById('headerDetails').textContent = `${userData.course} • ${userData.year}${getOrdinal(userData.year)} Year • ${userData.college}`;
+        const headerInfo = document.getElementById('studentHeaderInfo');
+        headerInfo.style.display = 'flex';
+        
+        // Set colorful, bold name
+        const headerName = document.getElementById('headerName');
+        headerName.textContent = userData.name;
+        
+        // Set colorful, attractive details with icons
+        const courseSpan = document.getElementById('courseSpan');
+        const yearSpan = document.getElementById('yearSpan');
+        const collegeSpan = document.getElementById('collegeSpan');
+        
+        if (courseSpan) {
+            courseSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                ${userData.course}
+            `;
+        }
+        
+        if (yearSpan) {
+            yearSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                ${userData.year}${getOrdinal(userData.year)} Year
+            `;
+        }
+        
+        if (collegeSpan) {
+            collegeSpan.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                ${userData.college}
+            `;
+        }
 
         // Logout / Edit Profile Logic
         const logoutBtn = document.getElementById('logoutBtn');
@@ -70,47 +109,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyHighlights(questionId, answerElement) {
         const highlights = getQuestionHighlights(questionId);
-        if (highlights.length === 0) return;
+        if (highlights.length === 0) {
+            // If no highlights, just ensure the element has clean text
+            const currentText = answerElement.textContent || answerElement.innerText || '';
+            if (currentText) {
+                const answerLabel = answerElement.querySelector('strong');
+                if (answerLabel && answerElement.textContent.includes('Answer:')) {
+                    const textOnly = answerElement.textContent.replace('Answer:', '').trim();
+                    answerElement.innerHTML = '<strong>Answer:</strong> ' + escapeHtml(textOnly);
+                } else {
+                    answerElement.innerHTML = escapeHtml(currentText);
+                }
+            }
+            return;
+        }
 
-        const textContent = answerElement.textContent || answerElement.innerText || '';
-        if (!textContent) return;
-
+        // Get clean text content (without HTML tags or existing highlights)
+        // First, get the original text from the question data if available
+        let cleanText = '';
+        const question = allQuestions.find(q => q.id === questionId);
+        
+        if (question && question.answer) {
+            // Use original answer text
+            cleanText = question.answer.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        } else {
+            // Fallback: extract text from current element
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = answerElement.innerHTML;
-        const cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            // Remove highlight spans
+            tempDiv.querySelectorAll('.highlight').forEach(span => {
+                span.replaceWith(document.createTextNode(span.textContent));
+            });
+            cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            cleanText = cleanText.replace(/\s+/g, ' ').trim();
+        }
         
+        if (!cleanText) return;
+        
+        // Escape HTML to prevent issues
         const escapeHtml = (text) => {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         };
 
+        // Sort highlights in reverse order to maintain correct indices when inserting
         const sortedHighlights = [...highlights].sort((a, b) => b.start - a.start);
         
+        // Build segments array
         let segments = [];
         let lastIndex = cleanText.length;
         
+        // Process highlights in reverse order
         sortedHighlights.forEach(highlight => {
-            if (highlight.start < 0 || highlight.end > cleanText.length || highlight.start >= highlight.end) {
-                return;
-            }
+            // Validate and adjust indices
+            let start = Math.max(0, Math.min(highlight.start, cleanText.length));
+            let end = Math.max(start, Math.min(highlight.end, cleanText.length));
             
-            if (highlight.end < lastIndex) {
+            if (start >= end) return;
+            
+            // Add segment after this highlight (if any)
+            if (end < lastIndex) {
                 segments.unshift({
                     type: 'text',
-                    content: cleanText.substring(highlight.end, lastIndex)
+                    content: cleanText.substring(end, lastIndex)
                 });
             }
             
+            // Add highlight segment
             segments.unshift({
                 type: 'highlight',
                 id: highlight.id,
-                content: cleanText.substring(highlight.start, highlight.end)
+                content: cleanText.substring(start, end)
             });
             
-            lastIndex = highlight.start;
+            lastIndex = start;
         });
         
+        // Add any text before first highlight
         if (lastIndex > 0) {
             segments.unshift({
                 type: 'text',
@@ -118,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        // Build HTML from segments
         let htmlContent = '';
         segments.forEach(segment => {
             if (segment.type === 'highlight') {
@@ -127,12 +204,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // Update the answer element with highlighted content
+        // Preserve the "Answer:" label if it exists
         const answerLabel = answerElement.querySelector('strong');
-        if (answerLabel && answerLabel.textContent.includes('Answer:')) {
-            answerElement.innerHTML = '<strong>Answer:</strong><br>' + htmlContent;
+        if (answerLabel && answerElement.textContent.includes('Answer:')) {
+            answerElement.innerHTML = '<strong>Answer:</strong> ' + htmlContent;
         } else {
             answerElement.innerHTML = htmlContent;
         }
+    }
+    
+    // Helper function for HTML escaping
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     function highlightSelectedText(questionId, answerElement) {
@@ -146,50 +232,182 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (selectedText.length === 0) return false;
 
-        if (!answerElement.contains(range.commonAncestorContainer)) {
+        // Check if selection is within the answer element
+        let container = range.commonAncestorContainer;
+        while (container && container !== answerElement && !answerElement.contains(container)) {
+            container = container.parentElement;
+        }
+        
+        if (!container || !answerElement.contains(container)) {
             return false;
         }
 
-        if (range.commonAncestorContainer.parentElement?.classList.contains('highlight')) {
+        // Check if selection is entirely within an existing highlight
+        // Allow partial selections that span highlights
+        let parent = range.commonAncestorContainer;
+        let isEntirelyInHighlight = false;
+        while (parent && parent !== answerElement) {
+            if (parent.classList && parent.classList.contains('highlight')) {
+                // Check if the entire selection is within this highlight
+                const highlightSpan = parent;
+                const highlightText = highlightSpan.textContent || highlightSpan.innerText || '';
+                if (highlightText.includes(selectedText.trim())) {
+                    // Check if selection start and end are both within this highlight
+                    const rangeStart = range.startContainer;
+                    const rangeEnd = range.endContainer;
+                    if (highlightSpan.contains(rangeStart) && highlightSpan.contains(rangeEnd)) {
+                        isEntirelyInHighlight = true;
+                        break;
+                    }
+                }
+            }
+            parent = parent.parentElement;
+        }
+        
+        // If selection is entirely within an existing highlight, don't highlight again
+        if (isEntirelyInHighlight) {
             return false;
         }
 
+        // Get clean text content from the answer element only (without HTML tags)
+        // Use the original question answer text for accurate offset calculation
+        const question = allQuestions.find(q => q.id === questionId);
+        let cleanText = '';
+        
+        if (question && question.answer) {
+            // Use original answer text - this is the source of truth
+            cleanText = question.answer.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        } else {
+            // Fallback: extract text from current element
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = answerElement.innerHTML;
+            // Remove highlight spans to get clean text
+            tempDiv.querySelectorAll('.highlight').forEach(span => {
+                span.replaceWith(document.createTextNode(span.textContent));
+            });
+            cleanText = tempDiv.textContent || tempDiv.innerText || '';
+            cleanText = cleanText.replace(/\s+/g, ' ').trim();
+        }
+        
+        if (!cleanText || cleanText.length === 0) {
+            console.error('No text content found in answer element');
+            return false;
+        }
+        
+        // Calculate start offset within the clean text
+        // Use a simpler approach: find the selected text in the clean text
+        const normalizedSelectedText = selectedText.replace(/\s+/g, ' ').trim();
+        const normalizedCleanText = cleanText.replace(/\s+/g, ' ');
+        
+        // Try to find the selected text in the clean text
+        // First, try to get offset using range
+        let startOffset = 0;
+        try {
         const preCaretRange = range.cloneRange();
         preCaretRange.selectNodeContents(answerElement);
         preCaretRange.setEnd(range.startContainer, range.startOffset);
-        const startOffset = preCaretRange.toString().length;
+            const beforeText = preCaretRange.toString().replace(/\s+/g, ' ');
+            startOffset = beforeText.length;
+        } catch (e) {
+            console.warn('Error calculating offset with range, using text search:', e);
+            // Fallback: search for the text
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+            }
+        }
+        
+        // Validate and adjust offset
+        if (startOffset < 0) startOffset = 0;
+        if (startOffset > normalizedCleanText.length) {
+            // Try finding the text instead
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+            } else {
+                return false;
+            }
+        }
+        
+        const endOffset = startOffset + normalizedSelectedText.length;
 
-        const endOffset = startOffset + selectedText.length;
+        // Validate offsets against normalized clean text
+        if (startOffset < 0 || endOffset > normalizedCleanText.length || startOffset >= endOffset) {
+            // Try to find the text in the clean text as fallback
+            const searchIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (searchIndex >= 0) {
+                startOffset = searchIndex;
+                const adjustedEnd = searchIndex + normalizedSelectedText.length;
+                if (adjustedEnd <= normalizedCleanText.length) {
+                    const adjustedHighlightId = Date.now();
+                    const highlights = getQuestionHighlights(questionId);
+                    highlights.push({
+                        id: adjustedHighlightId,
+                        start: startOffset,
+                        end: adjustedEnd,
+                        text: normalizedSelectedText
+                    });
+                    saveQuestionHighlights(questionId, highlights);
+                    applyHighlights(questionId, answerElement);
+                    selection.removeAllRanges();
+                    return true;
+                }
+            }
+            console.error('Invalid highlight offsets:', { 
+                startOffset, 
+                endOffset, 
+                cleanTextLength: normalizedCleanText.length,
+                selectedText: normalizedSelectedText
+            });
+            return false;
+        }
+        
+        // Verify the text at this position matches
+        const expectedText = normalizedCleanText.substring(startOffset, endOffset).trim();
+        if (expectedText !== normalizedSelectedText && !normalizedCleanText.substring(startOffset, endOffset).includes(normalizedSelectedText)) {
+            // Try to find the text in cleanText
+            const foundIndex = normalizedCleanText.indexOf(normalizedSelectedText);
+            if (foundIndex >= 0) {
+                // Use the found position
+                const adjustedStart = foundIndex;
+                const adjustedEnd = foundIndex + normalizedSelectedText.length;
+                if (adjustedStart >= 0 && adjustedEnd <= normalizedCleanText.length) {
+                    // Update offsets
+                    const adjustedHighlightId = Date.now();
+                    const highlights = getQuestionHighlights(questionId);
+                    highlights.push({
+                        id: adjustedHighlightId,
+                        start: adjustedStart,
+                        end: adjustedEnd,
+                        text: normalizedSelectedText
+                    });
+                    saveQuestionHighlights(questionId, highlights);
+                    applyHighlights(questionId, answerElement);
+                    selection.removeAllRanges();
+                    return true;
+                }
+            }
+            console.warn('Selected text mismatch:', { expectedText, selectedText: normalizedSelectedText });
+            return false;
+        }
+
         const highlightId = Date.now();
 
+        // Save highlight (use normalized text)
         const highlights = getQuestionHighlights(questionId);
         highlights.push({
             id: highlightId,
             start: startOffset,
             end: endOffset,
-            text: selectedText
+            text: normalizedSelectedText
         });
         saveQuestionHighlights(questionId, highlights);
 
-        try {
-            const highlightSpan = document.createElement('span');
-            highlightSpan.className = 'highlight';
-            highlightSpan.setAttribute('data-highlight-id', highlightId);
-            highlightSpan.textContent = selectedText;
-            
-            range.deleteContents();
-            range.insertNode(highlightSpan);
-        } catch (e) {
-            console.error('Error applying highlight:', e);
-            const filteredQuestions = currentFilter === 'all'
-                ? allQuestions
-                : allQuestions.filter(q => q.marks == currentFilter);
-            renderQuestions(filteredQuestions);
-        }
+        // Re-apply all highlights to ensure proper rendering
+        applyHighlights(questionId, answerElement);
 
+        // Clear selection but keep highlight mode enabled for multiple highlights
         selection.removeAllRanges();
-        highlightMode = false;
-        updateHighlightButtons();
 
         return true;
     }
@@ -241,19 +459,41 @@ document.addEventListener('DOMContentLoaded', () => {
             highlightMode = !highlightMode;
             updateHighlightButtons();
             
+            // Update cursor and highlight state for all answer texts and buttons
             document.querySelectorAll('.answer-text').forEach(answerText => {
+                const questionId = parseInt(answerText.getAttribute('data-question-id'));
+                const highlightBtn = document.querySelector(`.highlight-mode-btn[data-question-id="${questionId}"]`);
+                
                 if (highlightMode) {
                     answerText.style.cursor = 'text';
                     answerText.style.userSelect = 'text';
                     answerText.style.webkitUserSelect = 'text';
                     answerText.style.mozUserSelect = 'text';
                     answerText.style.msUserSelect = 'text';
+                    answerText.style.background = '#fefce8';
+                    
+                    // Update individual highlight button state
+                    if (highlightBtn) {
+                        highlightBtn.dataset.highlightEnabled = 'true';
+                        highlightBtn.style.background = '#22c55e';
+                        highlightBtn.style.color = 'white';
+                        highlightBtn.style.borderColor = '#16a34a';
+                    }
                 } else {
                     answerText.style.cursor = '';
                     answerText.style.userSelect = '';
                     answerText.style.webkitUserSelect = '';
                     answerText.style.mozUserSelect = '';
                     answerText.style.msUserSelect = '';
+                    answerText.style.background = '';
+                    
+                    // Update individual highlight button state
+                    if (highlightBtn) {
+                        highlightBtn.dataset.highlightEnabled = 'false';
+                        highlightBtn.style.background = '#fef9c3';
+                        highlightBtn.style.color = '#854d0e';
+                        highlightBtn.style.borderColor = '#fde047';
+                    }
                 }
             });
         });
@@ -345,11 +585,18 @@ document.addEventListener('DOMContentLoaded', () => {
     viewMode = 'grid';
     currentQuestionIndex = 0;
     
-    const initialFiltered = currentFilter === 'all'
-        ? allQuestions
-        : currentFilter === 'important'
-        ? allQuestions.filter(q => isImportant(q.id))
-        : allQuestions.filter(q => q.marks == currentFilter);
+    // Ensure "All Questions" filter is active by default
+    currentFilter = 'all';
+    const allFilterBtn = document.querySelector('.filter-btn[data-filter="all"]');
+    if (allFilterBtn) {
+        // Remove active class from all filter buttons
+        filterBtns.forEach(b => b.classList.remove('active'));
+        // Add active class to "All Questions" button
+        allFilterBtn.classList.add('active');
+    }
+    
+    // Initial render - show ALL questions by default
+    const initialFiltered = allQuestions;
     
     renderQuestions(initialFiltered);
     
@@ -463,11 +710,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Initialize: Show all answers by default
     allAnswersVisible = true;
     if (toggleAllBtn) {
         toggleAllBtn.textContent = "Hide All Answers";
     }
+    
+    // Function to show all answers
+    function showAllAnswers() {
+        const answerSections = document.querySelectorAll('.answer-section');
+        answerSections.forEach(section => {
+            section.classList.add('visible');
+            section.style.display = 'block';
+            section.style.visibility = 'visible';
+        });
+        
+        const toggleBtns = document.querySelectorAll('.toggle-answer-btn');
+        toggleBtns.forEach(btn => {
+            btn.textContent = "Hide Answer";
+        });
+        
+        if (toggleAllBtn) {
+            toggleAllBtn.textContent = "Hide All Answers";
+        }
+        allAnswersVisible = true;
+    }
+    
+    // Show all answers on page load
+    setTimeout(() => {
+        showAllAnswers();
+    }, 100);
 
+    // Toggle All Answers
     if (toggleAllBtn) {
         toggleAllBtn.addEventListener('click', () => {
             allAnswersVisible = !allAnswersVisible;
@@ -480,6 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (allAnswersVisible) {
                     section.classList.add('visible');
                     section.style.display = 'block';
+                    section.style.visibility = 'visible';
                 } else {
                     section.classList.remove('visible');
                     section.style.display = 'none';
@@ -583,6 +858,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${q.question}
                     </div>
                     
+                    <!-- Related Images Section -->
+                    <div class="related-images-section" data-question-id="${q.id}" style="margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
+                        <!-- Images will be loaded here -->
+                    </div>
+                    
                     ${mediaHtml}
                     
                     <div class="answer-section visible" style="display: block !important;">
@@ -601,6 +881,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                         Clarify Doubt
                     </button>
+                    <button class="btn-icon youtube-btn" title="Video Sources" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" style="background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path></svg>
+                        Sources
+                    </button>
                     <button class="btn-icon highlight-mode-btn" title="Highlight text" data-question-id="${q.id}" style="background: #fef9c3; color: #854d0e; border: 1px solid #fde047; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
                         Highlight
@@ -612,6 +896,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="btn-icon listen-btn" title="Listen" data-question-id="${q.id}" style="background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
                         Listen
+                    </button>
+                    <button class="btn-icon translate-question-btn" title="Translate to Tamil" data-question-id="${q.id}" data-question-text="${q.question.replace(/"/g, '&quot;')}" data-answer-text="${q.answer.replace(/"/g, '&quot;')}" style="background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg>
+                        Translate
                     </button>
                     <button class="btn-icon important-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
@@ -627,6 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 answerSection.classList.add('visible');
                 answerSection.style.display = 'block';
                 answerSection.style.visibility = 'visible';
+                answerSection.style.opacity = '1';
             }
             
             if (answerText) {
@@ -634,13 +923,85 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             container.appendChild(card);
+            
+            // Ensure answer is visible
+            const answerSection = card.querySelector('.answer-section');
+            if (answerSection) {
+                answerSection.style.display = 'block';
+                answerSection.style.visibility = 'visible';
+                answerSection.classList.add('visible');
+            }
+            
+            // Load related images for this question
+            loadRelatedImages(q.id, q.question);
         });
+        
+        // After rendering, ensure all answers are visible
+        setTimeout(() => {
+            const allAnswerSections = document.querySelectorAll('.answer-section');
+            allAnswerSections.forEach(section => {
+                section.style.display = 'block';
+                section.style.visibility = 'visible';
+                section.classList.add('visible');
+            });
+        }, 50);
+
+        // Function to load related images for a question
+        function loadRelatedImages(questionId, questionText) {
+            const imagesSection = document.querySelector(`.related-images-section[data-question-id="${questionId}"]`);
+            if (!imagesSection) return;
+
+            // Extract keywords from question (first 3-4 important words)
+            const words = questionText
+                .split(' ')
+                .filter(word => word.length > 3)
+                .slice(0, 4)
+                .join(' ');
+            
+            if (!words) return;
+
+            // Generate Unsplash image URLs
+            const imageUrls = [
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&education`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&study`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&learning`,
+                `https://source.unsplash.com/300x200/?${encodeURIComponent(words)}&academic`
+            ];
+
+            // Display images
+            imagesSection.innerHTML = imageUrls.map((url, index) => `
+                <div class="related-image-item" style="position: relative; width: 100%; padding-bottom: 75%; border-radius: 0.5rem; overflow: hidden; border: 2px solid var(--border); cursor: pointer; transition: all 0.2s; background: #f1f5f9;">
+                    <img src="${url}" 
+                         alt="Related image ${index + 1}" 
+                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover;"
+                         loading="lazy"
+                         onerror="this.parentElement.style.display='none'"
+                         onclick="window.open('${url}', '_blank')"
+                         onmouseover="this.style.transform='scale(1.05)'"
+                         onmouseout="this.style.transform='scale(1)'">
+                </div>
+            `).join('');
+        }
 
         // Add button handlers
         addButtonHandlers();
     }
 
     function addButtonHandlers() {
+        // Add Sources button handlers - Show sidebar with links and images
+        document.querySelectorAll('.youtube-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                const question = allQuestions.find(q => q.id === questionId);
+                
+                if (question) {
+                    showSourcesSidebar(questionText, question);
+                }
+            });
+        });
+
         // Chat Doubt button handlers for each question
         document.querySelectorAll('.chat-question-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -679,46 +1040,165 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Highlight button handlers
+        // Add highlight button handlers - Find answer element within the question card
         document.querySelectorAll('.highlight-mode-btn').forEach(btn => {
             const questionId = parseInt(btn.getAttribute('data-question-id'));
-            const answerText = document.querySelector(`.answer-text[data-question-id="${questionId}"]`);
             
+            // Find the answer text element within the same question card - try multiple methods
+            const questionCard = btn.closest('.question-card');
+            let answerText = null;
+            
+            if (questionCard) {
+                // Try finding by data attribute first
+                answerText = questionCard.querySelector(`.answer-text[data-question-id="${questionId}"]`);
+                // If not found, try finding any .answer-text in the card
+                if (!answerText) {
+                    answerText = questionCard.querySelector('.answer-text');
+                }
+                // If still not found, try finding within answer-section
+                if (!answerText) {
+                    const answerSection = questionCard.querySelector('.answer-section');
+                    if (answerSection) {
+                        answerText = answerSection.querySelector('.answer-text');
+                    }
+                }
+            }
+            
+            if (!answerText) {
+                console.warn(`Answer text not found for question ${questionId}`, {
+                    questionCard: !!questionCard,
+                    hasAnswerSection: questionCard ? !!questionCard.querySelector('.answer-section') : false
+                });
+                return;
+            }
+            
+            // Store highlight state per question
             btn.dataset.highlightEnabled = 'false';
             
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 
-                if (answerText) {
+                // Re-find answerText in case DOM changed (e.g., after re-rendering)
+                const currentCard = btn.closest('.question-card');
+                const currentAnswerText = currentCard ? 
+                    (currentCard.querySelector(`.answer-text[data-question-id="${questionId}"]`) || 
+                     currentCard.querySelector('.answer-text')) : null;
+                
+                if (!currentAnswerText) {
+                    console.error(`Answer text not found when clicking highlight button for question ${questionId}`);
+                    return;
+                }
+                
                     const isEnabled = btn.dataset.highlightEnabled === 'true';
                     
                     if (!isEnabled) {
+                    // Enable highlight mode
                         btn.dataset.highlightEnabled = 'true';
                         btn.style.background = '#22c55e';
                         btn.style.color = 'white';
                         btn.style.borderColor = '#16a34a';
-                        answerText.style.cursor = 'text';
-                        answerText.style.userSelect = 'text';
-                        answerText.style.background = '#fefce8';
+                    
+                    // Make the entire answer section selectable
+                    const answerSection = currentAnswerText.closest('.answer-section');
+                    if (answerSection) {
+                        answerSection.style.cursor = 'text';
+                        answerSection.style.userSelect = 'text';
+                        answerSection.style.webkitUserSelect = 'text';
+                        answerSection.style.mozUserSelect = 'text';
+                        answerSection.style.msUserSelect = 'text';
+                    }
+                    
+                    currentAnswerText.style.cursor = 'text';
+                    currentAnswerText.style.userSelect = 'text';
+                    currentAnswerText.style.webkitUserSelect = 'text';
+                    currentAnswerText.style.mozUserSelect = 'text';
+                    currentAnswerText.style.msUserSelect = 'text';
+                    currentAnswerText.style.background = '#fefce8';
+                    
+                    // Also make highlight spans selectable
+                    currentAnswerText.querySelectorAll('.highlight').forEach(span => {
+                        span.style.userSelect = 'text';
+                        span.style.webkitUserSelect = 'text';
+                        span.style.mozUserSelect = 'text';
+                        span.style.msUserSelect = 'text';
+                    });
+                    
+                    // Add mouseup listener for highlighting
+                    // Create handler function
+                    const mouseUpHandler = function(e) {
+                        // Don't process if clicking on buttons or controls
+                        if (e.target.closest('button') || e.target.closest('.answer-controls')) {
+                            return;
+                        }
+                        
+                        // Check if highlight mode is still enabled
+                        if (btn.dataset.highlightEnabled !== 'true' && !highlightMode) {
+                            return;
+                        }
+                        
+                        // Small delay to ensure selection is complete
+                        setTimeout(() => {
+                            const selection = window.getSelection();
+                            const selectedText = selection.toString().trim();
+                            
+                            // Only proceed if there's actually selected text
+                            if (selectedText.length > 0) {
+                                // Re-find answerText in case DOM changed
+                                const card = btn.closest('.question-card');
+                                const answerEl = card ? 
+                                    (card.querySelector(`.answer-text[data-question-id="${questionId}"]`) || 
+                                     card.querySelector('.answer-text')) : null;
+                                
+                                if (answerEl) {
+                                    const success = highlightSelectedText(questionId, answerEl);
+                                    if (success) {
+                                        // Keep highlight mode on for multiple highlights
+                                        if (!highlightMode) {
+                                            btn.dataset.highlightEnabled = 'true';
+                                            btn.style.background = '#22c55e';
+                                            btn.style.color = 'white';
+                                            btn.style.borderColor = '#16a34a';
+                                            answerEl.style.background = '#fefce8';
+                                        }
+                                    }
+                                }
+                            }
+                        }, 100); // Increased delay to ensure selection is captured
+                    };
+                    
+                    // Attach to both answer section and answer text for better coverage
+                    if (answerSection) {
+                        answerSection.addEventListener('mouseup', mouseUpHandler, { passive: true });
+                    }
+                    currentAnswerText.addEventListener('mouseup', mouseUpHandler, { passive: true });
+                    
+                    // Store handler reference for removal
+                    btn.dataset.mouseUpHandler = 'attached';
                     } else {
+                    // Disable highlight mode
                         btn.dataset.highlightEnabled = 'false';
                         btn.style.background = '#fef9c3';
                         btn.style.color = '#854d0e';
                         btn.style.borderColor = '#fde047';
-                        answerText.style.cursor = '';
-                        answerText.style.userSelect = '';
-                        answerText.style.background = '';
+                    
+                    const answerSection = currentAnswerText.closest('.answer-section');
+                    if (answerSection) {
+                        answerSection.style.cursor = '';
+                        answerSection.style.userSelect = '';
+                        answerSection.style.webkitUserSelect = '';
+                        answerSection.style.mozUserSelect = '';
+                        answerSection.style.msUserSelect = '';
                     }
+                    
+                    currentAnswerText.style.cursor = '';
+                    currentAnswerText.style.userSelect = '';
+                    currentAnswerText.style.webkitUserSelect = '';
+                    currentAnswerText.style.mozUserSelect = '';
+                    currentAnswerText.style.msUserSelect = '';
+                    currentAnswerText.style.background = '';
                 }
             });
             
-            if (answerText) {
-                answerText.addEventListener('mouseup', () => {
-                    if (btn.dataset.highlightEnabled === 'true') {
-                        highlightSelectedText(questionId, answerText);
-                    }
-                });
-            }
         });
 
         // Unhighlight button handlers
@@ -775,6 +1255,67 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Important button handlers
+        // Add translate question button handlers
+        document.querySelectorAll('.translate-question-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                const questionText = btn.getAttribute('data-question-text');
+                const answerText = btn.getAttribute('data-answer-text');
+                
+                // Show loading state
+                btn.disabled = true;
+                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
+                
+                try {
+                    // Translate question
+                    const questionResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(questionText)}&langpair=en|ta`);
+                    const questionData = await questionResponse.json();
+                    
+                    // Translate answer
+                    const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(answerText)}&langpair=en|ta`);
+                    const answerData = await answerResponse.json();
+                    
+                    // Find the question card and update it
+                    const questionCard = document.querySelector(`.question-card:has(.answer-controls .translate-question-btn[data-question-id="${questionId}"])`);
+                    if (questionCard) {
+                        const questionElement = questionCard.querySelector('.question-card > div > div:has(strong)');
+                        const answerElement = questionCard.querySelector('.answer-text');
+                        
+                        if (questionData.responseStatus === 200 && questionElement) {
+                            const originalQuestion = questionElement.textContent;
+                            questionElement.innerHTML = `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: #fef3c7; border-radius: 0.25rem; font-size: 0.875rem;">
+                                    <strong>Tamil:</strong> ${questionData.responseData.translatedText}
+                                </div>
+                                <div style="font-size: 0.875rem; color: var(--text-muted);">
+                                    <strong>English:</strong> ${originalQuestion}
+                                </div>
+                            `;
+                        }
+                        
+                        if (answerData.responseStatus === 200 && answerElement) {
+                            const originalAnswer = answerElement.textContent;
+                            answerElement.innerHTML = `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: #f0fdf4; border-radius: 0.25rem; font-size: 0.875rem;">
+                                    <strong>தமிழ்:</strong> ${answerData.responseData.translatedText}
+                                </div>
+                                <div style="font-size: 0.875rem; color: var(--text-muted);">
+                                    <strong>English:</strong> ${originalAnswer}
+                                </div>
+                            `;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    alert('Translation failed. Please try again.');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate';
+                }
+            });
+        });
+
         document.querySelectorAll('.important-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -864,11 +1405,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const maxSize = file.type.startsWith('image/') ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
-            if (file.size > maxSize) {
-                alert(`File size exceeds ${file.type.startsWith('image/') ? '5MB' : '20MB'}. Please upload a smaller file.`);
-                return;
-            }
+            // File size validation removed - users can upload files of any size
 
             currentMediaFile = file;
             const reader = new FileReader();
@@ -986,55 +1523,102 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function sendMessage() {
+    async function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
 
         addMessage(message, 'user');
         chatInput.value = '';
 
-        setTimeout(() => {
+        // Disable input while processing
+        if (chatInput) chatInput.disabled = true;
+        if (chatSend) chatSend.disabled = true;
+
+        // Show typing indicator
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'chat-message bot-message';
+        typingIndicator.id = 'typing-indicator';
+        typingIndicator.innerHTML = `
+            <div class="message-content">
+                <p style="color: var(--text-muted); font-style: italic;">ChatGPT is thinking...</p>
+            </div>
+        `;
+        chatMessages.appendChild(typingIndicator);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
+            const CHATGPT_API_KEY = localStorage.getItem('chatgpt_api_key') || '';
+            const CHATGPT_API_URL = 'https://api.openai.com/v1/chat/completions';
+            
+            // Build context for ChatGPT
+            let systemPrompt = 'You are a helpful study assistant helping students understand exam questions. Provide clear, detailed explanations in a friendly and encouraging manner.';
+            let userPrompt = message;
+            
+            if (question) {
+                systemPrompt = `You are a helpful study assistant. A student is asking about this ${question.marks}-mark question: "${question.question}". The correct answer is: "${question.answer}". Help them understand the question and answer clearly. Provide explanations in simple terms, give examples if helpful, and encourage their learning.`;
+                userPrompt = `Question: ${question.question}\n\nAnswer: ${question.answer}\n\nStudent's question: ${message}`;
+            }
+
+            // Call ChatGPT API
+            if (CHATGPT_API_KEY) {
+                const response = await fetch(CHATGPT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${CHATGPT_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-3.5-turbo',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const botResponse = data.choices[0].message.content;
+                
+                // Remove typing indicator
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+                
+                addMessage(botResponse, 'bot');
+                } else {
+                // Fallback: Use local responses if no API key
+                throw new Error('No API key configured');
+            }
+        } catch (error) {
+            console.error('ChatGPT API Error:', error);
+            
+            // Remove typing indicator
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+            
+            // Fallback to local responses
             let botResponse = '';
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
             
             if (question) {
-                // Question-specific AI responses
-                if (message.toLowerCase().includes('explain') || message.toLowerCase().includes('understand')) {
-                    botResponse = `**Detailed Explanation:**\n\n${question.question}\n\n**Answer:**\n${question.answer}\n\nDoes this clarify your doubt? Feel free to ask for specific parts if you need further clarification!`;
-                } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution')) {
-                    const briefAnswer = question.answer.length > 200 
-                        ? question.answer.substring(0, 200) + '...' 
-                        : question.answer;
-                    botResponse = `**Brief Answer:**\n\n${briefAnswer}\n\nThis is a ${question.marks}-mark question. To understand it better, ask me to explain any specific part!`;
-                } else if (message.toLowerCase().includes('hint') || message.toLowerCase().includes('help') || message.toLowerCase().includes('stuck')) {
-                    botResponse = `**Hint:**\n\nThis is a ${question.marks}-mark question. Key areas to focus on:\n- Understand the core concept\n- Break down the problem into smaller parts\n- Connect to real-world examples\n\nWould you like me to explain any specific part of "${question.question}"?`;
-                } else if (message.toLowerCase().includes('difficult') || message.toLowerCase().includes('hard') || message.toLowerCase().includes('confusing')) {
-                    botResponse = `**Don't worry!** Many students find this challenging. Let me break it down:\n\n**Question:** ${question.question}\n\n**Simplified Explanation:** ${question.answer.substring(0, 100)}...\n\nWhat specific part confuses you the most? I can explain that in simpler terms!`;
-                } else if (message.toLowerCase().includes('example')) {
-                    botResponse = `**Real-World Example:**\n\nThinking about ${question.question}:\n- It relates to practical situations in your course\n- The key concept is crucial for exams\n\n**The Answer Explains:**\n${question.answer}\n\nDoes this help you see the connection?`;
-                } else if (message.toLowerCase().includes('marks') || message.toLowerCase().includes('important')) {
-                    botResponse = `**Question Value:** ${question.marks} mark${question.marks > 1 ? 's' : ''}\n\n**Why It's Important:**\nThis question tests your understanding of core concepts that appear frequently in exams.\n\n**Answer:**\n${question.answer}\n\nMake sure to remember this concept!`;
-                } else {
-                    botResponse = `**Question:** ${question.question}\n\n**Analysis:**\nYou asked: "${message}"\n\n**Answer:**\n${question.answer}\n\nLet me know if you need clarification on any part!`;
-                }
+                botResponse = `**Question:** ${question.question}\n\n**Answer:**\n${question.answer}\n\n**Note:** To get AI-powered explanations with ChatGPT, please add your OpenAI API key. Open browser console (F12) and run:\nlocalStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n\n**Your Question:** ${message}\n\nI can help explain any part of this question. What would you like to know more about?`;
             } else {
-                // General chat responses when no specific question is selected
-                if (message.toLowerCase().includes('all questions') || message.toLowerCase().includes('questions')) {
-                    botResponse = `You have ${allQuestions.length} questions in total. You can:\n- Filter by marks (1, 2, 3, or 10 marks)\n- View important questions you've saved\n- Click "Clarify Doubt" on any question to chat about it\n\nWhich question would you like to explore?`;
-                } else if (message.toLowerCase().includes('important')) {
-                    const importantCount = getImportantQuestions().length;
-                    botResponse = `You have ${importantCount} important question${importantCount !== 1 ? 's' : ''} marked. These are the ones you found challenging or want to review later. Use "Clarify Doubt" button to get help on any of them!`;
-                } else if (message.toLowerCase().includes('test') || message.toLowerCase().includes('practice')) {
-                    botResponse = `**Practice Test Details:**\n- Total Marks: 20\n- Time: 60 minutes\n- Pattern: 1×2 marks, 2×1 marks, 2×3 marks, 1×10 marks\n- Text/Voice Input: Available\n\nGo to dashboard and click "Start Practice Test" when ready. Good luck!`;
-                } else if (message.toLowerCase().includes('help') || message.toLowerCase().includes('how')) {
-                    botResponse = `**How I Can Help You:**\n✓ Clarify difficult questions\n✓ Explain concepts in simple terms\n✓ Provide hints and tips\n✓ Give real-world examples\n✓ Answer test-related questions\n\nClick "Clarify Doubt" on any question card, and I'll help you understand it better!`;
-                } else {
-                    botResponse = `I'm your AI study assistant! I can:\n- Explain any question in simpler terms\n- Provide hints when you're stuck\n- Give real-world examples\n- Clarify confusing concepts\n\nClick "Clarify Doubt" on any question to get specific help!`;
-                }
+                botResponse = `I'm here to help! To get AI-powered ChatGPT responses, please configure your API key.\n\n**To add API key:**\n1. Press F12 to open browser console\n2. Run: localStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n3. Refresh the page\n\n**Your Question:** ${message}\n\nHow can I help you with your studies?`;
             }
             
             addMessage(botResponse, 'bot');
-        }, 500);
+        } finally {
+            // Re-enable input
+            if (chatInput) chatInput.disabled = false;
+            if (chatSend) chatSend.disabled = false;
+            if (chatInput) chatInput.focus();
+        }
     }
 
     function addMessage(text, type) {
@@ -1207,6 +1791,146 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const fileName = `Ready2Study_Questions_${new Date().toISOString().split('T')[0]}.pdf`;
         doc.save(fileName);
+    }
+
+    // Sources Sidebar Functions
+    function showSourcesSidebar(questionText, question) {
+        const sidebar = document.getElementById('sourcesSidebar');
+        const overlay = document.getElementById('sourcesSidebarOverlay');
+        const loading = document.getElementById('sourcesLoading');
+        const content = document.getElementById('sourcesContent');
+        const videoLinks = document.getElementById('videoLinks');
+        const articleLinks = document.getElementById('articleLinks');
+        const relatedImages = document.getElementById('relatedImages');
+
+        // Show sidebar and overlay
+        sidebar.classList.add('active');
+        overlay.classList.add('active');
+        
+        // Show loading
+        loading.style.display = 'flex';
+        content.style.display = 'none';
+
+        // Generate sources based on question text
+        setTimeout(() => {
+            generateSources(questionText, question, videoLinks, articleLinks, relatedImages);
+            loading.style.display = 'none';
+            content.style.display = 'block';
+        }, 500);
+    }
+
+    function generateSources(questionText, question, videoLinksEl, articleLinksEl, imagesEl) {
+        // Extract keywords from question (first 5-7 words)
+        const words = questionText.split(' ').slice(0, 7).join(' ');
+        const searchQuery = encodeURIComponent(words);
+        const tamilQuery = encodeURIComponent(`${words} தமிழ்`);
+
+        // Generate YouTube video links
+        const youtubeLinks = [
+            {
+                title: `YouTube: ${words} - Tamil Explanation`,
+                url: `https://www.youtube.com/results?search_query=${tamilQuery}+explanation+tutorial`,
+                icon: 'youtube'
+            },
+            {
+                title: `YouTube: ${words} - Educational Video`,
+                url: `https://www.youtube.com/results?search_query=${searchQuery}+educational`,
+                icon: 'youtube'
+            },
+            {
+                title: `YouTube: ${words} - Lecture`,
+                url: `https://www.youtube.com/results?search_query=${searchQuery}+lecture`,
+                icon: 'youtube'
+            }
+        ];
+
+        videoLinksEl.innerHTML = youtubeLinks.map(link => `
+            <a href="${link.url}" target="_blank" class="source-link">
+                <div class="source-link-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path>
+                    </svg>
+                </div>
+                <div class="source-link-content">
+                    <div class="source-link-title">${link.title}</div>
+                    <div class="source-link-url">${link.url.replace('https://www.', '').substring(0, 50)}...</div>
+                </div>
+            </a>
+        `).join('');
+
+        // Generate article links (Wikipedia, educational sites)
+        const articleLinks = [
+            {
+                title: `Wikipedia: ${words}`,
+                url: `https://en.wikipedia.org/wiki/Special:Search?search=${searchQuery}`,
+                icon: 'wikipedia'
+            },
+            {
+                title: `Khan Academy: ${words}`,
+                url: `https://www.khanacademy.org/search?page_search_query=${searchQuery}`,
+                icon: 'article'
+            },
+            {
+                title: `Google Scholar: ${words}`,
+                url: `https://scholar.google.com/scholar?q=${searchQuery}`,
+                icon: 'article'
+            },
+            {
+                title: `Britannica: ${words}`,
+                url: `https://www.britannica.com/search?query=${searchQuery}`,
+                icon: 'article'
+            }
+        ];
+
+        articleLinksEl.innerHTML = articleLinks.map(link => `
+            <a href="${link.url}" target="_blank" class="source-link">
+                <div class="source-link-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 17H20v-2.5a2.5 2.5 0 0 0-2.5-2.5H9"></path>
+                        <path d="M9 12H4V6.5A2.5 2.5 0 0 1 6.5 4H20v5.5a2.5 2.5 0 0 1-2.5 2.5H9z"></path>
+                    </svg>
+                </div>
+                <div class="source-link-content">
+                    <div class="source-link-title">${link.title}</div>
+                    <div class="source-link-url">${link.url.replace('https://www.', '').replace('https://', '').substring(0, 50)}...</div>
+                </div>
+            </a>
+        `).join('');
+
+        // Generate related images (using Unsplash API with keywords)
+        const imageKeywords = words.split(' ').slice(0, 3).join(' ');
+        const imageUrls = [
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&education`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&study`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&learning`,
+            `https://source.unsplash.com/400x300/?${encodeURIComponent(imageKeywords)}&academic`
+        ];
+
+        imagesEl.innerHTML = imageUrls.map((url, index) => `
+            <div class="source-image" onclick="window.open('${url}', '_blank')">
+                <img src="${url}" alt="Related image ${index + 1}" loading="lazy" onerror="this.src='https://via.placeholder.com/400x300?text=Image+${index + 1}'">
+            </div>
+        `).join('');
+    }
+
+    // Close sources sidebar handlers
+    const closeSourcesBtn = document.getElementById('closeSourcesSidebar');
+    const sourcesOverlay = document.getElementById('sourcesSidebarOverlay');
+    const sourcesSidebar = document.getElementById('sourcesSidebar');
+
+    if (closeSourcesBtn) {
+        closeSourcesBtn.addEventListener('click', () => {
+            sourcesSidebar.classList.remove('active');
+            sourcesOverlay.classList.remove('active');
+        });
+    }
+
+    if (sourcesOverlay) {
+        sourcesOverlay.addEventListener('click', () => {
+            sourcesSidebar.classList.remove('active');
+            sourcesOverlay.classList.remove('active');
+        });
     }
 });
 
