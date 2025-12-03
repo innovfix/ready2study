@@ -5,8 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.filter-btn[data-filter]');
     const toggleAllBtn = document.getElementById('toggleAllAnswers');
     const toggleHighlightModeBtn = document.getElementById('toggleHighlightMode');
-    const translateCurrentAnswerBtn = document.getElementById('translateCurrentAnswer');
-    const untranslateCurrentAnswerBtn = document.getElementById('untranslateCurrentAnswer');
+    const unhighlightCurrentQuestionBtn = document.getElementById('unhighlightCurrentQuestion');
 
     let currentFilter = 'all';
     let allAnswersVisible = false;
@@ -508,9 +507,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Translate Current Answer to Tamil
-    if (translateCurrentAnswerBtn) {
-        translateCurrentAnswerBtn.addEventListener('click', async () => {
+    // Unhighlight Current Question - Remove all highlights from current question only
+    if (unhighlightCurrentQuestionBtn) {
+        unhighlightCurrentQuestionBtn.addEventListener('click', () => {
             // Get current question ID from the displayed question
             const currentAnswerText = document.querySelector('.answer-text[data-question-id]');
             if (!currentAnswerText) {
@@ -524,115 +523,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Get current question details
-            const currentQuestion = allQuestions.find(q => q.id === currentQuestionId);
-            if (!currentQuestion) {
-                alert('Question not found.');
-                return;
-            }
+            // Clear all highlights for this question only from localStorage
+            saveQuestionHighlights(currentQuestionId, []);
             
-            // Get the full answer text - remove any HTML tags and get clean text
-            let fullAnswerText = '';
-            if (currentAnswerText.textContent) {
-                fullAnswerText = currentAnswerText.textContent.trim();
-            } else if (currentQuestion.answer) {
-                fullAnswerText = currentQuestion.answer.trim();
-            } else {
-                alert('Could not find answer text to translate.');
-                return;
-            }
+            // Find all answer elements for this question (in case there are multiple views)
+            const allAnswerElements = document.querySelectorAll(`.answer-text[data-question-id="${currentQuestionId}"]`);
             
-            // Remove "Answer:" label if present
-            fullAnswerText = fullAnswerText.replace(/^Answer:\s*/i, '').trim();
-            
-            if (!fullAnswerText) {
-                alert('Answer text is empty.');
-                return;
-            }
-            
-            // Show loading state
-            translateCurrentAnswerBtn.disabled = true;
-            translateCurrentAnswerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
-            
-            try {
-                // Translate the FULL answer text to Tamil
-                const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(fullAnswerText)}&langpair=en|ta`);
-                const answerData = await answerResponse.json();
-                
-                if (answerData.responseStatus === 200 && answerData.responseData.translatedText) {
-                    const tamilTranslation = answerData.responseData.translatedText;
-                    
-                    // Store original answer for reverting
-                    currentAnswerText.setAttribute('data-original-answer', fullAnswerText);
-                    currentAnswerText.setAttribute('data-translated-answer', tamilTranslation);
-                    
-                    // Update answer display - Show Tamil translation prominently
-                    currentAnswerText.innerHTML = `
-                        <div style="padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 0.75rem; font-family: 'Noto Sans Tamil', sans-serif; font-size: 1rem; line-height: 1.8; color: #1e293b;">
-                            <strong style="color: #10b981; font-size: 1.1rem; display: block; margin-bottom: 0.5rem;">தமிழ்:</strong>
-                            <div style="font-size: 1rem; line-height: 1.8;">${escapeHtml(tamilTranslation)}</div>
-                        </div>
-                        <div style="padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #64748b; font-size: 0.9rem; line-height: 1.6; color: #64748b;">
-                            <strong style="color: #64748b; display: block; margin-bottom: 0.5rem;">English:</strong>
-                            <div>${escapeHtml(fullAnswerText)}</div>
-                        </div>
-                    `;
-                    
-                    // Hide translate button, show untranslate button
-                    translateCurrentAnswerBtn.style.display = 'none';
-                    if (untranslateCurrentAnswerBtn) {
-                        untranslateCurrentAnswerBtn.style.display = 'flex';
+            allAnswerElements.forEach(answerElement => {
+                // Remove all highlight spans from the DOM
+                const highlightSpans = answerElement.querySelectorAll('span.highlight');
+                highlightSpans.forEach(span => {
+                    const parent = span.parentNode;
+                    if (parent) {
+                        // Replace the span with its text content
+                        parent.replaceChild(document.createTextNode(span.textContent), span);
                     }
-                    
-                    console.log(`✅ Full answer translated to Tamil for question ${currentQuestionId}`);
-                    console.log(`Original: ${fullAnswerText.substring(0, 50)}...`);
-                    console.log(`Tamil: ${tamilTranslation.substring(0, 50)}...`);
+                });
+                
+                // Normalize the DOM to merge adjacent text nodes
+                answerElement.normalize();
+                
+                // Get the original answer text from the question data
+                const question = allQuestions.find(q => q.id === currentQuestionId);
+                if (question && question.answer) {
+                    // Re-apply the answer text without highlights
+                    // Preserve the "Answer:" label if it exists
+                    const hasAnswerLabel = answerElement.textContent.includes('Answer:');
+                    if (hasAnswerLabel) {
+                        answerElement.innerHTML = '<strong>Answer:</strong> ' + escapeHtml(question.answer);
+                    } else {
+                        answerElement.innerHTML = escapeHtml(question.answer);
+                    }
                 } else {
-                    throw new Error('Translation failed: ' + (answerData.responseDetails || 'Unknown error'));
+                    // If no question data, just remove highlights from current content
+                    const cleanText = answerElement.textContent || answerElement.innerText || '';
+                    answerElement.innerHTML = escapeHtml(cleanText);
                 }
-            } catch (error) {
-                console.error('Translation error:', error);
-                alert('Translation failed. Please try again. Error: ' + error.message);
-            } finally {
-                translateCurrentAnswerBtn.disabled = false;
-                translateCurrentAnswerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate Answer to Tamil';
-            }
-        });
-    }
-
-    // Untranslate Current Answer (Revert to English)
-    if (untranslateCurrentAnswerBtn) {
-        untranslateCurrentAnswerBtn.addEventListener('click', () => {
-            // Get current question ID from the displayed question
-            const currentAnswerText = document.querySelector('.answer-text[data-question-id]');
-            if (!currentAnswerText) {
-                alert('No question is currently displayed.');
-                return;
-            }
+            });
             
-            const originalAnswer = currentAnswerText.getAttribute('data-original-answer');
-            if (originalAnswer) {
-                // Restore original English answer
-                currentAnswerText.textContent = originalAnswer;
-                currentAnswerText.removeAttribute('data-original-answer');
-                currentAnswerText.removeAttribute('data-translated-answer');
-                
-                // Re-apply highlights if any
-                const questionId = parseInt(currentAnswerText.getAttribute('data-question-id'));
-                if (questionId) {
-                    applyHighlights(questionId, currentAnswerText);
-                }
-                
-                // Hide untranslate button, show translate button
-                untranslateCurrentAnswerBtn.style.display = 'none';
-                if (translateCurrentAnswerBtn) {
-                    translateCurrentAnswerBtn.style.display = 'flex';
-                }
-                
-                console.log('✅ Answer reverted to English');
-            } else {
-                alert('No translation found to revert.');
-            }
+            console.log(`✅ All highlights removed from question ${currentQuestionId}`);
         });
     }
 
