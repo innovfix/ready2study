@@ -24,62 +24,83 @@ document.addEventListener('DOMContentLoaded', () => {
     const IMPORTANT_STORAGE_KEY = 'ready2study_important';
     const QUESTION_MEDIA_STORAGE_KEY = 'ready2study_question_media';
 
-    // Load Student Info
-    const userData = JSON.parse(localStorage.getItem('ready2study_user'));
-    if (userData) {
-        const headerInfo = document.getElementById('studentHeaderInfo');
-        headerInfo.style.display = 'flex';
-        
-        // Set colorful, bold name
-        const headerName = document.getElementById('headerName');
-        headerName.textContent = userData.name;
-        
-        // Set colorful, attractive details with icons
-        const courseSpan = document.getElementById('courseSpan');
-        const yearSpan = document.getElementById('yearSpan');
-        const collegeSpan = document.getElementById('collegeSpan');
-        
-        if (courseSpan) {
-            courseSpan.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                    <line x1="8" y1="21" x2="16" y2="21"></line>
-                    <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-                ${userData.course}
-            `;
+    // Load Student Info from API
+    let userData = null;
+    (async () => {
+        try {
+            const userResponse = await AuthAPI.getUser();
+            userData = userResponse.user;
+            localStorage.setItem('ready2study_user', JSON.stringify(userData));
+        } catch (error) {
+            // Fallback to localStorage if API fails
+            userData = JSON.parse(localStorage.getItem('ready2study_user'));
+            if (!userData) {
+                window.location.href = 'student-info.html';
+                return;
+            }
         }
         
-        if (yearSpan) {
-            yearSpan.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                ${userData.year}${getOrdinal(userData.year)} Year
-            `;
-        }
-        
-        if (collegeSpan) {
-            collegeSpan.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                </svg>
-                ${userData.college}
-            `;
-        }
+        if (userData) {
+            const headerInfo = document.getElementById('studentHeaderInfo');
+            if (headerInfo) headerInfo.style.display = 'flex';
+            
+            // Set colorful, bold name
+            const headerName = document.getElementById('headerName');
+            if (headerName) headerName.textContent = userData.name;
+            
+            // Set colorful, attractive details with icons
+            const courseSpan = document.getElementById('courseSpan');
+            const yearSpan = document.getElementById('yearSpan');
+            const collegeSpan = document.getElementById('collegeSpan');
+            
+            if (courseSpan) {
+                courseSpan.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    ${userData.course}
+                `;
+            }
+            
+            if (yearSpan) {
+                yearSpan.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    ${userData.year}${getOrdinal(userData.year)} Year
+                `;
+            }
+            
+            if (collegeSpan) {
+                collegeSpan.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    ${userData.college}
+                `;
+            }
 
-        // Logout / Edit Profile Logic
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            localStorage.removeItem('ready2study_user');
-            window.location.href = 'student-info.html';
-        });
+            // Logout / Edit Profile Logic
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    try {
+                        await AuthAPI.logout();
+                    } catch (error) {
+                        console.error('Logout error:', error);
+                    }
+                    localStorage.removeItem('ready2study_user');
+                    window.location.href = 'student-info.html';
+                });
+            }
         }
-    }
+    })();
+    
 
     function getOrdinal(n) {
         const s = ["th", "st", "nd", "rd"];
@@ -104,15 +125,29 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem(HIGHLIGHTS_STORAGE_KEY, JSON.stringify(highlights));
     }
 
-    function getQuestionHighlights(questionId) {
-        const highlights = getHighlights();
-        return highlights[questionId] || [];
+    async function getQuestionHighlights(questionId) {
+        try {
+            const response = await HighlightAPI.getByQuestion(questionId);
+            return response.highlight || [];
+        } catch (error) {
+            console.error('Failed to load highlights from API:', error);
+            // Fallback to localStorage
+            const highlights = getHighlights();
+            return highlights[questionId] || [];
+        }
     }
 
-    function saveQuestionHighlights(questionId, highlightData) {
+    async function saveQuestionHighlights(questionId, highlightData) {
         const highlights = getHighlights();
         highlights[questionId] = highlightData;
         saveHighlights(highlights);
+        
+        // Save to backend API
+        try {
+            await HighlightAPI.save(questionId, highlightData);
+        } catch (error) {
+            console.error('Failed to save highlights to API:', error);
+        }
     }
 
     function applyHighlights(questionId, answerElement) {
@@ -618,47 +653,127 @@ document.addEventListener('DOMContentLoaded', () => {
         return important.some(i => i.id === questionId);
     }
 
-    // Load questions from localStorage (PDF questions) or use mockQuestions as fallback
-    // In production, this would come from actual PDF processing
+    // Load questions from API or localStorage fallback
+    let allQuestionsLoaded = false;
+    const pdfId = localStorage.getItem('ready2study_current_pdf_id');
+    
+    console.log('=== DASHBOARD LOADING QUESTIONS ===');
+    console.log('PDF ID from localStorage:', pdfId);
+    console.log('PDF ID type:', typeof pdfId);
+    
+    // Function to load and display questions
+    async function loadAndDisplayQuestions() {
+        if (pdfId) {
+            try {
+                console.log('→ Fetching questions from API for PDF ID:', pdfId);
+                const questionsResponse = await QuestionAPI.getByPDF(pdfId);
+                console.log('✓ API Response received:', questionsResponse);
+                console.log('  Questions count:', questionsResponse.questions?.length || 0);
+                
+                if (questionsResponse.questions && questionsResponse.questions.length > 0) {
+                    allQuestions = questionsResponse.questions.map(q => ({
+                        id: q.id,
+                        question: q.question_text || q.question || 'No question text',
+                        answer: q.answer_text || q.answer || 'No answer provided',
+                        marks: q.marks || 1,
+                        examDate: q.exam_date,
+                    }));
+                    
+                    console.log('✓ Questions mapped successfully:', allQuestions.length);
+                    console.log('  Sample question:', {
+                        id: allQuestions[0]?.id,
+                        question: allQuestions[0]?.question?.substring(0, 50) + '...',
+                        answer: allQuestions[0]?.answer?.substring(0, 50) + '...',
+                        marks: allQuestions[0]?.marks
+                    });
+                    
+                    allQuestionsLoaded = true;
+                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
+                    console.log('✓ Questions saved to localStorage');
+                    
+                    // Display questions immediately
+                    displayQuestionSummary();
+                    const initialFiltered = filterQuestionsByMarks(allQuestions, currentFilter);
+                    renderQuestions(initialFiltered);
+                    return true; // Success
+                } else {
+                    console.warn('⚠ No questions found in API response');
+                    return false;
+                }
+            } catch (error) {
+                console.error('✗ Failed to load questions from API:', error);
+                console.error('  Error details:', {
+                    message: error.message,
+                    stack: error.stack
+                });
+                return false;
+            }
+        } else {
+            console.warn('⚠ No PDF ID found in localStorage');
+            return false;
+        }
+    }
+    
+    // Try to load from API first, then fallback to localStorage
+    loadAndDisplayQuestions().then(success => {
+        if (!success) {
+            console.log('→ Falling back to localStorage...');
+            // Fallback logic continues below
+        }
+    });
+    
+    // Load questions from localStorage immediately (for instant display)
     const storedQuestions = localStorage.getItem('ready2study_pdf_questions');
     if (storedQuestions) {
         try {
             const parsed = JSON.parse(storedQuestions);
             if (Array.isArray(parsed) && parsed.length > 0) {
+                console.log('→ Found questions in localStorage, displaying immediately...');
                 allQuestions = parsed;
+                console.log('  Questions count:', allQuestions.length);
                 
-                // Always update question 4 with the latest content from mockData
-                const question4Index = allQuestions.findIndex(q => q.id === 4);
-                const newQuestion4 = mockQuestions.find(q => q.id === 4);
-                
-                if (question4Index !== -1 && newQuestion4) {
-                    // Update question 4 to match mockData
-                    allQuestions[question4Index] = { ...newQuestion4 };
-                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
-                    console.log('✅ Updated question 4 with latest content:', newQuestion4.question.substring(0, 50) + '...');
-                } else if (question4Index === -1 && newQuestion4) {
-                    // Add question 4 if it doesn't exist
-                    allQuestions.push(newQuestion4);
-                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
-                    console.log('✅ Added question 4 to questions list');
-                }
-            } else {
-                allQuestions = mockQuestions;
-                localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
-                console.log('✅ Loaded all questions from mockData');
+                // Display questions immediately from localStorage
+                displayQuestionSummary();
+                const initialFiltered = filterQuestionsByMarks(allQuestions, currentFilter);
+                renderQuestions(initialFiltered);
             }
         } catch (e) {
             console.error('Error parsing stored questions:', e);
+        }
+    }
+    
+    // Fallback to localStorage if API fails (will be checked after async load completes)
+    setTimeout(() => {
+        if (!allQuestionsLoaded && storedQuestions) {
+            try {
+                const parsed = JSON.parse(storedQuestions);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    allQuestions = parsed;
+                } else {
+                    allQuestions = mockQuestions;
+                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
+                    console.log('✅ Loaded all questions from mockData');
+                }
+            } catch (e) {
+                console.error('Error parsing stored questions:', e);
+                allQuestions = mockQuestions;
+                localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
+                console.log('✅ Reset to mockData due to error');
+            }
+        } else if (!allQuestionsLoaded && !storedQuestions) {
+            // Store mockQuestions in localStorage as PDF questions (for testing)
             allQuestions = mockQuestions;
             localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
-            console.log('✅ Reset to mockData due to error');
+            console.log('✅ Initialized with mockData questions:', allQuestions.length);
         }
-    } else {
-        // Store mockQuestions in localStorage as PDF questions (for testing)
-        allQuestions = mockQuestions;
-        localStorage.setItem('ready2study_pdf_questions', JSON.stringify(mockQuestions));
-        console.log('✅ Initialized with mockData questions:', allQuestions.length);
-    }
+        
+        // Only re-render if we didn't already render from localStorage
+        if (!allQuestionsLoaded && allQuestions.length > 0) {
+            displayQuestionSummary();
+            const initialFiltered = filterQuestionsByMarks(allQuestions, currentFilter);
+            renderQuestions(initialFiltered);
+        }
+    }, 500); // Wait 500ms for API call to complete
 
     // Initialize - make sure we have questions to display
     if (allQuestions.length === 0) {
@@ -1005,9 +1120,140 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Generate Questions Button Handler
+    function setupGenerateQuestionsButton() {
+        const generateBtn = document.getElementById('generateQuestionsBtn');
+        if (!generateBtn) return;
+
+        generateBtn.addEventListener('click', async () => {
+            // Get current PDF ID from localStorage or API
+            let pdfId = null;
+            const pdfData = JSON.parse(localStorage.getItem('ready2study_pdf') || '{}');
+            
+            if (pdfData.id) {
+                pdfId = pdfData.id;
+            } else {
+                // Try to get the latest PDF from API
+                try {
+                    const pdfsResponse = await PDFAPI.getAll();
+                    if (pdfsResponse.pdfs && pdfsResponse.pdfs.length > 0) {
+                        pdfId = pdfsResponse.pdfs[0].id;
+                        // Store it for future use
+                        localStorage.setItem('ready2study_pdf', JSON.stringify({
+                            id: pdfId,
+                            name: pdfsResponse.pdfs[0].original_name || 'Uploaded Document'
+                        }));
+                    }
+                } catch (error) {
+                    console.error('Error fetching PDFs:', error);
+                    alert('Unable to find uploaded PDF. Please upload a PDF first.');
+                    return;
+                }
+            }
+
+            if (!pdfId) {
+                alert('No PDF found. Please upload a PDF first.');
+                return;
+            }
+
+            // Disable button and show loading state
+            const generateIcon = document.getElementById('generateQuestionsIcon');
+            const generateText = document.getElementById('generateQuestionsText');
+            const originalText = generateText.textContent;
+            const originalHTML = generateBtn.innerHTML;
+
+            generateBtn.disabled = true;
+            generateBtn.style.opacity = '0.7';
+            generateBtn.style.cursor = 'not-allowed';
+            generateText.textContent = 'Generating Questions...';
+            
+            // Add spinner icon
+            if (generateIcon) {
+                generateIcon.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spinner">
+                        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+                    </svg>
+                `;
+            }
+
+            try {
+                // Call API to generate questions
+                const response = await PDFAPI.generateQuestions(pdfId);
+                
+                if (response.questions && response.questions.length > 0) {
+                    // Store PDF ID for future use
+                    localStorage.setItem('ready2study_current_pdf_id', pdfId);
+
+                    // Reload questions from API to get all questions (including newly generated ones)
+                    try {
+                        const questionsResponse = await QuestionAPI.getByPDF(pdfId);
+                        allQuestions = questionsResponse.questions.map(q => ({
+                            id: q.id,
+                            question: q.question_text || q.question,
+                            answer: q.answer_text || q.answer,
+                            marks: q.marks,
+                            examDate: q.exam_date || new Date().toLocaleDateString()
+                        }));
+                        
+                        // Update localStorage
+                        localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
+                    } catch (loadError) {
+                        console.error('Error reloading questions:', loadError);
+                        // Fallback: use generated questions
+                        const generatedQuestions = response.questions.map((q, index) => ({
+                            id: q.id || `gen_${Date.now()}_${index}`,
+                            question: q.question_text || q.question,
+                            answer: q.answer_text || q.answer,
+                            marks: q.marks || 1,
+                            examDate: q.exam_date || new Date().toLocaleDateString()
+                        }));
+                        allQuestions = [...allQuestions, ...generatedQuestions];
+                        localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestions));
+                    }
+
+                    // Show success message
+                    alert(`Successfully generated ${response.count || response.questions.length} questions!`);
+
+                    // Refresh the display
+                    displayPDFContent();
+                    renderQuestions(allQuestions);
+                    updateQuestionProgress();
+
+                    // Update filter counts
+                    applyFilter(currentFilter);
+                } else {
+                    throw new Error('No questions were generated');
+                }
+            } catch (error) {
+                console.error('Error generating questions:', error);
+                alert('Failed to generate questions: ' + (error.message || 'Unknown error. Please try again.'));
+            } finally {
+                // Restore button state
+                generateBtn.disabled = false;
+                generateBtn.style.opacity = '1';
+                generateBtn.style.cursor = 'pointer';
+                generateText.textContent = originalText;
+                if (generateIcon) {
+                    generateIcon.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="12" y1="18" x2="12" y2="12"></line>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                    `;
+                }
+            }
+        });
+    }
+
     // Display PDF content first - ensure it runs after DOM is ready and questions are loaded
     function initializeDashboard() {
         console.log('Initializing dashboard...');
+        
+        // Setup Generate Questions button
+        setupGenerateQuestionsButton();
         
         // First, display PDF content
         displayPDFContent();
@@ -1530,7 +1776,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Store filtered questions for navigation
         filteredQuestionsList = questions;
         
-        console.log('Rendering questions:', questions.length, 'questions');
+        console.log('=== RENDERING QUESTIONS ===');
+        console.log('Questions count:', questions.length);
+        if (questions.length > 0) {
+            console.log('First question:', {
+                id: questions[0].id,
+                question: questions[0].question?.substring(0, 50) + '...',
+                answer: questions[0].answer?.substring(0, 50) + '...',
+                hasAnswer: !!questions[0].answer && questions[0].answer.length > 0
+            });
+        }
 
         if (questions.length === 0) {
             if (currentFilter === 'important') {
@@ -1541,18 +1796,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p style="margin-top: 1rem;">Mark questions as important to see them here.</p>
                     </div>
                 `;
-                return; // Added: exit after showing empty important state
+                return;
             } else {
-            container.innerHTML = `
-                <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
-                    <h3>No questions found for this category.</h3>
-                </div>
-            `;
-            return;
+                // Check if we have questions in allQuestions but they're filtered out
+                const pdfId = localStorage.getItem('ready2study_current_pdf_id');
+                if (pdfId && allQuestions.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                            <h3>No questions found.</h3>
+                            <p style="margin-top: 1rem;">Please upload a PDF and generate questions first.</p>
+                            <a href="index.html" style="display: inline-block; margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--gradient-primary); color: white; border-radius: 0.5rem; text-decoration: none; font-weight: 600;">
+                                Upload PDF
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                            <h3>No questions found for this category.</h3>
+                            <p style="margin-top: 1rem;">Try selecting "All Questions" to see all available questions.</p>
+                        </div>
+                    `;
+                }
+                return;
+            }
         }
-        } // Added: closing brace for if (questions.length === 0)
 
-        // Group questions by marks for one-by-one view
+        // Group questions by marks
         const questionsByMarks = {
             1: questions.filter(q => q.marks === 1),
             2: questions.filter(q => q.marks === 2),
@@ -1560,18 +1830,8 @@ document.addEventListener('DOMContentLoaded', () => {
             10: questions.filter(q => q.marks === 10)
         };
         
-        // Show ONE question at a time - One-by-one view mode
-        container.classList.add('one-by-one-view');
         const progressEl = document.getElementById('questionProgress');
         const navControls = document.getElementById('navigationControls');
-        
-        // Ensure currentQuestionIndex is within bounds
-            if (currentQuestionIndex >= questions.length) {
-                currentQuestionIndex = 0;
-            }
-            if (currentQuestionIndex < 0) {
-            currentQuestionIndex = 0;
-        }
         
         // Check if we have questions
         if (questions.length === 0) {
@@ -1579,58 +1839,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Show only current question
-        let currentQuestion = questions[currentQuestionIndex];
+        // GRID MODE: Show ALL questions at once
+        let questionsToRender = questions;
         
-        if (!currentQuestion) {
-            console.error('No question found at index', currentQuestionIndex, 'Total questions:', questions.length);
-            // Reset to first question
-            currentQuestionIndex = 0;
-            currentQuestion = questions[0];
-            if (!currentQuestion) {
-                container.innerHTML = '<div style="text-align: center; padding: 4rem; color: var(--text-muted);"><h3>Error loading questions.</h3></div>';
-                return;
-            }
-        }
+        // Remove one-by-one view class and add grid view class
+        container.classList.remove('one-by-one-view');
+        container.classList.add('questions-grid');
         
-        let questionsToRender = [currentQuestion];
-        
-        // Update progress indicator
-        if (progressEl) {
-            progressEl.textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
-            progressEl.style.display = 'block';
-        } else {
-            console.warn('Progress element not found');
-        }
-        
-        // Show navigation controls
+        // Hide navigation controls in grid mode
         if (navControls) {
-            navControls.style.display = 'flex';
-        } else {
-            console.warn('Navigation controls element not found');
+            navControls.style.display = 'none';
         }
         
-        // Update navigation button states
-        const prevBtn = document.getElementById('prevQuestionBtn');
-        const nextBtn = document.getElementById('nextQuestionBtn');
-        
-        if (prevBtn) {
-            prevBtn.disabled = currentQuestionIndex === 0;
-            prevBtn.style.opacity = currentQuestionIndex === 0 ? '0.5' : '1';
-            prevBtn.style.cursor = currentQuestionIndex === 0 ? 'not-allowed' : 'pointer';
-        } else {
-            console.warn('Previous button not found');
+        // Update progress indicator to show total count
+        if (progressEl) {
+            progressEl.textContent = `Showing ${questions.length} question${questions.length !== 1 ? 's' : ''}`;
+            progressEl.style.display = 'block';
         }
         
-        if (nextBtn) {
-            nextBtn.disabled = currentQuestionIndex >= questions.length - 1;
-            nextBtn.style.opacity = currentQuestionIndex >= questions.length - 1 ? '0.5' : '1';
-            nextBtn.style.cursor = currentQuestionIndex >= questions.length - 1 ? 'not-allowed' : 'pointer';
-        } else {
-            console.warn('Next button not found');
-        }
-        
-        console.log(`✅ Rendering question ${currentQuestionIndex + 1} of ${questions.length}`);
+        console.log(`✅ Rendering ALL ${questions.length} questions in grid mode`);
 
         // Ensure container is visible
         if (container) {
@@ -1649,7 +1876,19 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.opacity = '1';
 
             // Format answer with line breaks if needed
-            const formattedAnswer = q.answer.replace(/\n/g, '<br>');
+            const answerText = q.answer || q.answer_text || 'No answer provided';
+            const formattedAnswer = answerText.replace(/\n/g, '<br>');
+            
+            // Ensure question text exists
+            const questionText = q.question || q.question_text || 'No question text';
+            
+            console.log(`Rendering question ${index + 1}:`, {
+                id: q.id,
+                question: questionText?.substring(0, 50) + '...',
+                answer: answerText?.substring(0, 50) + '...',
+                hasAnswer: !!answerText && answerText !== 'No answer provided' && answerText.length > 0,
+                marks: q.marks
+            });
 
             // Image HTML if exists - clickable to expand
             const imageHtml = q.image ? `<div class="answer-image-container" style="cursor: pointer;" onclick="openImageModal('${q.image}', 'Answer Diagram')"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image" style="cursor: zoom-in;"></div>` : '';
@@ -1695,7 +1934,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     <!-- Question -->
                     <div style="font-size: 0.9rem; font-weight: 600; color: #0f172a; line-height: 1.4; padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 3px solid ${markColor}; margin-bottom: 0.75rem;">
-                        ${q.question}
+                        ${questionText}
                     </div>
                     
                     <!-- Related Images Section -->
@@ -1705,13 +1944,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     ${mediaHtml}
                     
-                    <!-- Answer -->
-                    <div class="answer-section visible" style="display: block !important;">
-                        <div style="font-size: 0.875rem; color: #1e293b; line-height: 1.5; padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 3px solid #10b981;">
-                            <span style="color: #10b981; font-weight: 600; font-size: 0.85rem;">Answer:</span> 
-                            <span class="answer-text" data-question-id="${q.id}" style="color: #334155;">
+                    <!-- Answer - Always Visible -->
+                    <div class="answer-section visible" style="display: block !important; visibility: visible !important; opacity: 1 !important; margin-top: 1rem;">
+                        <div style="font-size: 0.875rem; color: #1e293b; line-height: 1.6; padding: 1rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.1);">
+                            <div style="color: #10b981; font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                </svg>
+                                Answer:
+                            </div>
+                            <div class="answer-text" data-question-id="${q.id}" style="color: #334155; font-size: 0.875rem; line-height: 1.7;">
                                 ${formattedAnswer}
-                            </span>
+                            </div>
                             ${imageHtml}
                         </div>
                     </div>
@@ -1751,11 +1996,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         ${isImportantQuestion ? 'Saved' : 'Save'}
                     </button>
+                    <button class="btn-icon attach-media-btn" title="Attach Image/Video" data-question-id="${q.id}" style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        Media
+                    </button>
                 </div>
             `;
 
             // Get answer text element for highlight functionality
-            const answerText = card.querySelector('.answer-text');
+            const answerTextElement = card.querySelector('.answer-text');
             const answerSection = card.querySelector('.answer-section');
             
             // Ensure answer is ALWAYS visible by default for reading
@@ -1767,12 +2016,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // Apply saved highlights - always show them
-            if (answerText) {
-                applyHighlights(q.id, answerText);
+            if (answerTextElement) {
+                applyHighlights(q.id, answerTextElement);
             }
             
             container.appendChild(card);
-            console.log('Question card appended:', q.question.substring(0, 50) + '...');
+            console.log('✓ Question card appended:', questionText.substring(0, 50) + '...');
+            console.log('  Answer visible:', answerText !== 'No answer provided' ? 'Yes' : 'No');
             
             // Load related images for this question
             loadRelatedImages(q.id, q.question);
@@ -1781,7 +2031,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // After rendering, ensure all answers are visible and attach all event handlers
         setTimeout(() => {
             const allAnswerSections = document.querySelectorAll('.answer-section');
-            allAnswerSections.forEach(section => {
+            console.log(`✓ Ensuring ${allAnswerSections.length} answer sections are visible`);
+            allAnswerSections.forEach((section, idx) => {
                 section.style.display = 'block';
                 section.style.visibility = 'visible';
                 section.classList.add('visible');
@@ -1799,10 +2050,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const translateBtns = document.querySelectorAll('.translate-question-btn');
             const untranslateBtns = document.querySelectorAll('.untranslate-question-btn');
             const importantBtns = document.querySelectorAll('.important-btn');
+            const attachMediaBtns = document.querySelectorAll('.attach-media-btn');
             
             console.log('✅ ALL FEATURES LOADED AND READY:');
             console.log(`  📊 Total Questions: ${questions.length}`);
-            console.log(`  📝 Current Question: ${currentQuestionIndex + 1} of ${questions.length}`);
+            console.log(`  📝 View Mode: Grid (All questions displayed)`);
             console.log(`  💬 Chat Buttons: ${chatBtns.length}`);
             console.log(`  🎥 Sources Buttons: ${youtubeBtns.length}`);
             console.log(`  🖊️ Highlight Buttons: ${highlightBtns.length}`);
@@ -1811,7 +2063,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`  🌐 Translate Buttons: ${translateBtns.length}`);
             console.log(`  🔄 Untranslate Buttons: ${untranslateBtns.length}`);
             console.log(`  ❤️ Save Buttons: ${importantBtns.length}`);
-            console.log('\n✅ All features are ready to use!');
+            console.log(`  📎 Attach Media Buttons: ${attachMediaBtns.length}`);
+            console.log('\n✅ All questions and answers are displayed with all features ready!');
         }, 100);
 
         // Function to load related images for a question
@@ -2295,6 +2548,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Update sidebar count
                 displayQuestionSummary();
+            });
+        });
+
+        // Add attach media button handlers
+        document.querySelectorAll('.attach-media-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                console.log('✅ Attach Media clicked for question:', questionId);
+                openMediaModal(questionId);
             });
         });
     }

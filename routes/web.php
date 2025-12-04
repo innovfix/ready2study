@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\PageController;
+use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,6 +29,17 @@ Route::get('/test', [PageController::class, 'test'])->name('test');
 
 // Test Results
 Route::get('/test-results', [PageController::class, 'testResults'])->name('test.results');
+
+// CSRF Token endpoint for static HTML files
+Route::get('/api/csrf-token', function () {
+    return response()->json([
+        'token' => csrf_token()
+    ]);
+});
+
+// API routes accessible from static HTML files
+Route::post('/api/register', [AuthController::class, 'register']);
+Route::post('/api/login', [AuthController::class, 'login']);
 
 
 

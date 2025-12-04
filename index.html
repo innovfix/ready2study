@@ -67,18 +67,41 @@
 
     <!-- PDF.js library for reading PDF content -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="js/api-service.js"></script>
     <script src="js/mockData.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const dropZone = document.getElementById('dropZone');
             const fileInput = document.getElementById('fileInput');
             const fileInfo = document.getElementById('fileInfo');
             const generateBtn = document.getElementById('generateBtn');
             const loader = document.getElementById('loader');
 
-            // Check if student info exists, if not redirect to student-info page
-            const userData = JSON.parse(localStorage.getItem('ready2study_user'));
-            if (!userData) {
+            // Check if user is authenticated via localStorage
+            console.log('=== INDEX.HTML PAGE LOAD ===');
+            console.log('Timestamp:', new Date().toISOString());
+            
+            let userData = null;
+            console.log('→ Checking localStorage for user data...');
+            const storedUser = localStorage.getItem('ready2study_user');
+            
+            if (!storedUser) {
+                // No user data found, redirect to registration
+                console.log('✗ No user data found in localStorage');
+                console.log('→ Redirecting to student-info.html...');
+                window.location.href = 'student-info.html';
+                return;
+            }
+            
+            console.log('✓ User data found in localStorage');
+            try {
+                userData = JSON.parse(storedUser);
+                console.log('✓ User data parsed successfully:', userData);
+                console.log('=== USER AUTHENTICATED - CONTINUING TO UPLOAD PAGE ===');
+            } catch (error) {
+                // Invalid user data, redirect to registration
+                console.error('✗ Invalid user data in localStorage:', error);
+                console.log('→ Redirecting to student-info.html...');
                 window.location.href = 'student-info.html';
                 return;
             }
@@ -490,7 +513,28 @@
                         'PDF Content Length': pdfText.length
                     });
                     
-                    // Step 5: Finalizing
+                    // Step 5: Uploading to Backend
+                    loaderTitle.textContent = 'Uploading to Server...';
+                    loaderMessage.textContent = 'Saving PDF and questions to database';
+                    progressBar.style.width = '90%';
+                    progressText.textContent = '90% - Uploading to server...';
+                    
+                    // Upload PDF file to backend
+                    const pdfResponse = await PDFAPI.upload(window.currentPDFFile, pdfText);
+                    const pdfId = pdfResponse.pdf.id;
+                    
+                    // Prepare questions for API (remove id, add exam_date)
+                    const questionsForAPI = pdfQuestions.map(q => ({
+                        question_text: q.question,
+                        answer_text: q.answer,
+                        marks: q.marks,
+                        exam_date: q.examDate || null,
+                    }));
+                    
+                    // Save questions to backend
+                    await QuestionAPI.createBulk(pdfId, questionsForAPI);
+                    
+                    // Step 6: Finalizing
                     loaderTitle.textContent = 'Finalizing...';
                     loaderMessage.textContent = 'Preparing questions and answers for display';
                     progressBar.style.width = '100%';
@@ -498,15 +542,25 @@
                     
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
-                    // Store PDF questions and content in localStorage
+                    // Store PDF ID and questions in localStorage for quick access
+                    // Ensure PDF ID is stored as number for API calls
+                    localStorage.setItem('ready2study_current_pdf_id', String(pdfId));
                     localStorage.setItem('ready2study_pdf_questions', JSON.stringify(pdfQuestions));
-                    localStorage.setItem('ready2study_pdf_content', pdfText); // Store full PDF content
+                    localStorage.setItem('ready2study_pdf_content', pdfText);
                     localStorage.setItem('ready2study_pdf_uploaded', 'true');
-                    localStorage.setItem('ready2study_pdf_name', JSON.parse(localStorage.getItem('ready2study_pdf')).name);
+                    localStorage.setItem('ready2study_pdf_name', window.currentPDFFile.name);
+                    
+                    console.log('✓ PDF uploaded successfully!');
+                    console.log('  PDF ID:', pdfId);
+                    console.log('  Questions saved:', pdfQuestions.length);
+                    console.log('  Redirecting to dashboard...');
                     
                     loader.style.display = 'none';
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Questions';
+                    
+                    // Small delay to ensure localStorage is saved before redirect
+                    await new Promise(resolve => setTimeout(resolve, 100));
                     window.location.href = 'dashboard.html';
                     
                 } catch (error) {

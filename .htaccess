@@ -1,0 +1,46 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Serve API PHP files directly if they exist (before Laravel routing)
+    # Handle nested paths like api/pdfs/upload
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^api/(.+)$ api/$1.php [L]
+    
+    # Also check for nested PHP files in subdirectories
+    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}.php -f
+    RewriteRule ^api/(.+)$ api/$1.php [L]
+
+    # Route API requests to Laravel (if public/index.php exists)
+    RewriteCond %{REQUEST_URI} ^/api/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/public/index.php -f
+    RewriteRule ^api/(.*)$ public/index.php [L]
+
+    # Route API requests to Laravel (if index.php is in root)
+    RewriteCond %{REQUEST_URI} ^/api/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{DOCUMENT_ROOT}/index.php -f
+    RewriteRule ^api/(.*)$ index.php [L]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send Requests To Front Controller (for Laravel routes)
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_URI} !^/api/
+    RewriteRule ^ index.php [L]
+</IfModule>
+

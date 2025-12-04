@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="">
     <title>Student Info - Ready2Study</title>
     <link rel="stylesheet" href="css/style.css">
     <style>
@@ -124,23 +125,78 @@
         </div>
     </main>
 
+    <script src="js/api-service.js"></script>
     <script>
-        document.getElementById('studentForm').addEventListener('submit', function (e) {
+        // Fetch CSRF token from Laravel if available
+        async function getCSRFToken() {
+            try {
+                const response = await fetch('api/csrf-token', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.token) {
+                        const metaTag = document.querySelector('meta[name="csrf-token"]');
+                        if (metaTag) {
+                            metaTag.setAttribute('content', data.token);
+                        }
+                        return data.token;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not fetch CSRF token:', e);
+            }
+            return '';
+        }
+
+        // Initialize CSRF token on page load
+        getCSRFToken();
+
+        document.getElementById('studentForm').addEventListener('submit', async function (e) {
             e.preventDefault();
+            console.log('=== FORM SUBMISSION STARTED ===');
+            console.log('Timestamp:', new Date().toISOString());
 
             // Capture Data
             const studentData = {
                 name: document.getElementById('name').value,
                 college: document.getElementById('college').value,
                 course: document.getElementById('course').value,
-                year: document.getElementById('year').value
+                year: parseInt(document.getElementById('year').value)
             };
+            console.log('✓ Form data collected:', studentData);
 
-            // Save to LocalStorage (Simulating a session)
-            localStorage.setItem('ready2study_user', JSON.stringify(studentData));
+            try {
+                console.log('→ Calling AuthAPI.register()...');
+                // Register user via API
+                const response = await AuthAPI.register(studentData);
+                console.log('✓ API Response received:', response);
+                
+                // Store user data in localStorage for quick access (optional)
+                console.log('→ Storing user data in localStorage...');
+                localStorage.setItem('ready2study_user', JSON.stringify(response.user));
+                localStorage.setItem('ready2study_current_pdf_id', response.pdf_id || null);
+                console.log('✓ Data stored in localStorage');
+                console.log('  - User data:', response.user);
+                console.log('  - PDF ID:', response.pdf_id || null);
 
-            // Redirect to main upload page
-            window.location.href = 'index.html';
+                // Redirect to main upload page
+                console.log('→ Redirecting to index.html...');
+                console.log('=== FORM SUBMISSION SUCCESSFUL ===');
+                window.location.href = 'index.html';
+            } catch (error) {
+                // Show detailed error message
+                console.error('=== FORM SUBMISSION FAILED ===');
+                const errorMsg = error.message || 'Unknown error occurred';
+                console.error('✗ Registration error details:', {
+                    message: error.message,
+                    error: error,
+                    stack: error.stack,
+                    timestamp: new Date().toISOString()
+                });
+                alert('Registration failed: ' + errorMsg + '\n\nPlease check:\n1. MySQL is running in XAMPP\n2. Database "ready2study" exists\n3. Check browser console (F12) for details');
+            }
         });
     </script>
 </body>
