@@ -84,3 +84,4 @@ For better integration, consider converting `student-info.html` to a Blade templ
 - Better Laravel integration
 
 
+

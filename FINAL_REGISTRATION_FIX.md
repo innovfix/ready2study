@@ -98,3 +98,4 @@ The simplified endpoint (`register-simple.php`) will be tried first and should w
 The simplified endpoint should give you a clearer error message!
 
 
+

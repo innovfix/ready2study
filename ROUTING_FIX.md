@@ -67,3 +67,4 @@ For best results, use Laravel Blade templates instead of static HTML:
 - This ensures Laravel processes all requests
 
 
+

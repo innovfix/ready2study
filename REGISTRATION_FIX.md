@@ -97,3 +97,4 @@ CREATE TABLE IF NOT EXISTS users (
 4. Verify MySQL is running in XAMPP
 
 
+

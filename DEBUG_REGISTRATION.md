@@ -88,3 +88,4 @@ Open phpMyAdmin: `http://localhost/phpmyadmin`
 4. Check Network tab to see what's being called
 
 
+

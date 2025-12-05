@@ -5,10 +5,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.filter-btn[data-filter]');
     const toggleAllBtn = document.getElementById('toggleAllAnswers');
     const toggleHighlightModeBtn = document.getElementById('toggleHighlightMode');
-    const unhighlightCurrentQuestionBtn = document.getElementById('unhighlightCurrentQuestion');
+    const clearAllHighlightsBtn = document.getElementById('clearAllHighlights');
 
     let currentFilter = 'all';
-    let allAnswersVisible = false;
+    let allAnswersVisible = true; // Answers visible by default
     let selectedText = null;
     let selectedRange = null;
     let highlightMode = false;
@@ -32,11 +32,21 @@ document.addEventListener('DOMContentLoaded', () => {
             userData = userResponse.user;
             localStorage.setItem('ready2study_user', JSON.stringify(userData));
         } catch (error) {
+            // Silently fail - API endpoints may not exist (404 is expected for static HTML)
             // Fallback to localStorage if API fails
-            userData = JSON.parse(localStorage.getItem('ready2study_user'));
-            if (!userData) {
-                window.location.href = 'student-info.html';
-                return;
+            try {
+                const stored = localStorage.getItem('ready2study_user');
+                if (stored) {
+                    userData = JSON.parse(stored);
+                } else {
+                    // Only redirect if no user data at all
+                    const currentPath = window.location.pathname;
+                    if (!currentPath.includes('student-info.html') && !currentPath.includes('index.html')) {
+                        // Don't redirect if already on registration pages
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing user data:', e);
             }
         }
         
@@ -128,12 +138,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getQuestionHighlights(questionId) {
         try {
             const response = await HighlightAPI.getByQuestion(questionId);
-            return response.highlight || [];
+            const highlights = response.highlight || response.highlights || [];
+            // Ensure it's an array
+            return Array.isArray(highlights) ? highlights : [];
         } catch (error) {
-            console.error('Failed to load highlights from API:', error);
+            // Silently fail - API endpoints may not exist (404 is expected for static HTML)
             // Fallback to localStorage
             const highlights = getHighlights();
-            return highlights[questionId] || [];
+            const questionHighlights = highlights[questionId] || [];
+            // Ensure it's an array
+            return Array.isArray(questionHighlights) ? questionHighlights : [];
         }
     }
 
@@ -150,8 +164,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function applyHighlights(questionId, answerElement) {
-        const highlights = getQuestionHighlights(questionId);
+    async function applyHighlights(questionId, answerElement) {
+        let highlights = [];
+        try {
+            highlights = await getQuestionHighlights(questionId);
+        } catch (error) {
+            console.error('Error getting highlights:', error);
+            // Fallback to localStorage
+            const highlightsData = getHighlights();
+            highlights = highlightsData[questionId] || [];
+        }
+        
+        // Ensure highlights is an array
+        if (!Array.isArray(highlights)) {
+            highlights = [];
+        }
+        
         if (highlights.length === 0) {
             // If no highlights, just ensure the element has clean text
             const currentText = answerElement.textContent || answerElement.innerText || '';
@@ -376,15 +404,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 const adjustedEnd = searchIndex + normalizedSelectedText.length;
                 if (adjustedEnd <= normalizedCleanText.length) {
                     const adjustedHighlightId = Date.now();
-                    const highlights = getQuestionHighlights(questionId);
-                    highlights.push({
-                        id: adjustedHighlightId,
-                        start: startOffset,
-                        end: adjustedEnd,
-                        text: normalizedSelectedText
+                    // Get highlights asynchronously
+                    getQuestionHighlights(questionId).then(highlights => {
+                        highlights.push({
+                            id: adjustedHighlightId,
+                            start: startOffset,
+                            end: adjustedEnd,
+                            text: normalizedSelectedText
+                        });
+                        saveQuestionHighlights(questionId, highlights);
+                        return applyHighlights(questionId, answerElement);
+                    }).catch(err => {
+                        console.error('Error adding highlight:', err);
                     });
-                    saveQuestionHighlights(questionId, highlights);
-                    applyHighlights(questionId, answerElement);
                     selection.removeAllRanges();
                     return true;
                 }
@@ -410,15 +442,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (adjustedStart >= 0 && adjustedEnd <= normalizedCleanText.length) {
                     // Update offsets
                     const adjustedHighlightId = Date.now();
-                    const highlights = getQuestionHighlights(questionId);
-                    highlights.push({
-                        id: adjustedHighlightId,
-                        start: adjustedStart,
-                        end: adjustedEnd,
-                        text: normalizedSelectedText
+                    // Get highlights asynchronously
+                    getQuestionHighlights(questionId).then(highlights => {
+                        highlights.push({
+                            id: adjustedHighlightId,
+                            start: adjustedStart,
+                            end: adjustedEnd,
+                            text: normalizedSelectedText
+                        });
+                        saveQuestionHighlights(questionId, highlights);
+                        return applyHighlights(questionId, answerElement);
+                    }).catch(err => {
+                        console.error('Error adding highlight:', err);
                     });
-                    saveQuestionHighlights(questionId, highlights);
-                    applyHighlights(questionId, answerElement);
                     selection.removeAllRanges();
                     return true;
                 }
@@ -428,19 +464,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const highlightId = Date.now();
 
-        // Save highlight (use normalized text)
-        const highlights = getQuestionHighlights(questionId);
-        highlights.push({
-            id: highlightId,
-            start: startOffset,
-            end: endOffset,
-            text: normalizedSelectedText
-        });
-        saveQuestionHighlights(questionId, highlights);
+        // Save highlight (use normalized text) - get highlights asynchronously
+        getQuestionHighlights(questionId).then(highlights => {
+            highlights.push({
+                id: highlightId,
+                start: startOffset,
+                end: endOffset,
+                text: normalizedSelectedText
+            });
+            saveQuestionHighlights(questionId, highlights);
 
-        // Re-apply all highlights to ensure proper rendering
-        // This ensures highlights work correctly even when there are existing highlights
-        applyHighlights(questionId, answerElement);
+            // Re-apply all highlights to ensure proper rendering
+            // This ensures highlights work correctly even when there are existing highlights
+            return applyHighlights(questionId, answerElement);
+        }).catch(err => {
+            console.error('Error adding highlight:', err);
+        });
 
         // Clear selection but keep highlight mode enabled for multiple highlights
         selection.removeAllRanges();
@@ -453,20 +492,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function removeHighlight(questionId, highlightId) {
-        const highlights = getQuestionHighlights(questionId);
-        const filtered = highlights.filter(h => h.id !== highlightId);
-        saveQuestionHighlights(questionId, filtered);
-        
-        // Re-render the question
-        let filteredQuestions;
-        if (currentFilter === 'all') {
-            filteredQuestions = allQuestions;
-        } else if (currentFilter === 'important') {
-            filteredQuestions = allQuestions.filter(q => isImportant(q.id));
-        } else {
-            filteredQuestions = allQuestions.filter(q => q.marks == currentFilter);
-        }
-        renderQuestions(filteredQuestions);
+        // Get highlights asynchronously
+        getQuestionHighlights(questionId).then(highlights => {
+            const filtered = highlights.filter(h => h.id !== highlightId);
+            saveQuestionHighlights(questionId, filtered);
+            
+            // Re-render the question
+            const answerElement = document.querySelector(`.answer-text[data-question-id="${questionId}"]`);
+            if (answerElement) {
+                return applyHighlights(questionId, answerElement);
+            }
+        }).catch(err => {
+            console.error('Error removing highlight:', err);
+        });
     }
 
     function updateHighlightButtons() {
@@ -542,61 +580,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Unhighlight Current Question - Remove all highlights from current question only
-    if (unhighlightCurrentQuestionBtn) {
-        unhighlightCurrentQuestionBtn.addEventListener('click', () => {
-            // Get current question ID from the displayed question
-            const currentAnswerText = document.querySelector('.answer-text[data-question-id]');
-            if (!currentAnswerText) {
-                alert('No question is currently displayed.');
+    // Clear All Highlights - Remove highlights from ALL questions
+    if (clearAllHighlightsBtn) {
+        clearAllHighlightsBtn.addEventListener('click', () => {
+            if (!confirm('Are you sure you want to clear all highlights from all questions? This action cannot be undone.')) {
                 return;
             }
+
+            // Clear all highlights from localStorage
+            saveHighlights({});
             
-            const currentQuestionId = parseInt(currentAnswerText.getAttribute('data-question-id'));
-            if (!currentQuestionId) {
-                alert('Could not identify the current question.');
-                return;
-            }
+            // Re-render all questions to remove highlights
+            const filteredQuestions = currentFilter === 'all'
+                ? allQuestions
+                : currentFilter === 'important'
+                    ? allQuestions.filter(q => isImportant(q.id))
+                    : allQuestions.filter(q => q.marks == currentFilter);
             
-            // Clear all highlights for this question only from localStorage
-            saveQuestionHighlights(currentQuestionId, []);
+            renderQuestions(filteredQuestions);
             
-            // Find all answer elements for this question (in case there are multiple views)
-            const allAnswerElements = document.querySelectorAll(`.answer-text[data-question-id="${currentQuestionId}"]`);
-            
-            allAnswerElements.forEach(answerElement => {
-                // Remove all highlight spans from the DOM
-                const highlightSpans = answerElement.querySelectorAll('span.highlight');
-                highlightSpans.forEach(span => {
-                    const parent = span.parentNode;
-                    if (parent) {
-                        // Replace the span with its text content
-                        parent.replaceChild(document.createTextNode(span.textContent), span);
-                    }
-                });
-                
-                // Normalize the DOM to merge adjacent text nodes
-                answerElement.normalize();
-                
-                // Get the original answer text from the question data
-                const question = allQuestions.find(q => q.id === currentQuestionId);
-                if (question && question.answer) {
-                    // Re-apply the answer text without highlights
-                    // Preserve the "Answer:" label if it exists
-                    const hasAnswerLabel = answerElement.textContent.includes('Answer:');
-                    if (hasAnswerLabel) {
-                        answerElement.innerHTML = '<strong>Answer:</strong> ' + escapeHtml(question.answer);
-                    } else {
-                        answerElement.innerHTML = escapeHtml(question.answer);
-                    }
-                } else {
-                    // If no question data, just remove highlights from current content
-                    const cleanText = answerElement.textContent || answerElement.innerText || '';
-                    answerElement.innerHTML = escapeHtml(cleanText);
-                }
-            });
-            
-            console.log(`✅ All highlights removed from question ${currentQuestionId}`);
+            console.log('✅ All highlights cleared from all questions');
         });
     }
 
@@ -651,6 +654,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function isImportant(questionId) {
         const important = getImportantQuestions();
         return important.some(i => i.id === questionId);
+    }
+
+    // Filter questions by marks
+    function filterQuestionsByMarks(questions, filter) {
+        if (filter === 'all') {
+            return questions;
+        } else if (filter === 'important') {
+            return questions.filter(q => isImportant(q.id));
+        } else {
+            return questions.filter(q => q.marks == filter);
+        }
     }
 
     // Load questions from API or localStorage fallback
@@ -805,6 +819,24 @@ document.addEventListener('DOMContentLoaded', () => {
         filterBtns.forEach(b => b.classList.remove('active'));
         // Add active class to "All Questions" button
         allFilterBtn.classList.add('active');
+    }
+    
+    // Ensure questions are rendered immediately if we have them
+    if (allQuestions.length > 0 && container) {
+        const initialFiltered = filterQuestionsByMarks(allQuestions, currentFilter);
+        console.log('→ Rendering questions immediately on page load:', initialFiltered.length);
+        renderQuestions(initialFiltered);
+    } else if (container) {
+        // Show message if no questions
+        container.innerHTML = `
+            <div style="text-align: center; padding: 4rem; color: var(--text-muted);">
+                <h3>No questions found.</h3>
+                <p style="margin-top: 1rem;">Please upload a PDF and generate questions first.</p>
+                <a href="index.html" style="display: inline-block; margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--gradient-primary); color: white; border-radius: 0.5rem; text-decoration: none; font-weight: 600;">
+                    Upload PDF
+                </a>
+            </div>
+        `;
     }
     
     // Display PDF Content First with Questions and Answers
@@ -1976,6 +2008,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
                         Highlight
                     </button>
+                    <button class="btn-icon unhighlight-question-btn" title="Remove highlights from this question" data-question-id="${q.id}" style="background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"></path><path d="M6 6l12 12"></path></svg>
+                        Unhighlight
+                    </button>
                     <button class="btn-icon listen-btn" title="Listen" data-question-id="${q.id}" style="background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
                         Listen
@@ -1996,10 +2032,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         ${isImportantQuestion ? 'Saved' : 'Save'}
                     </button>
-                    <button class="btn-icon attach-media-btn" title="Attach Image/Video" data-question-id="${q.id}" style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                        Media
-                    </button>
                 </div>
             `;
 
@@ -2017,7 +2049,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Apply saved highlights - always show them
             if (answerTextElement) {
-                applyHighlights(q.id, answerTextElement);
+                // Apply highlights asynchronously (don't block rendering)
+                applyHighlights(q.id, answerTextElement).catch(err => {
+                    console.error('Error applying highlights:', err);
+                });
             }
             
             container.appendChild(card);
@@ -2045,25 +2080,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const chatBtns = document.querySelectorAll('.chat-question-btn');
             const youtubeBtns = document.querySelectorAll('.youtube-btn');
             const highlightBtns = document.querySelectorAll('.highlight-mode-btn');
+            const unhighlightBtns = document.querySelectorAll('.unhighlight-question-btn');
             const listenBtns = document.querySelectorAll('.listen-btn');
             const stopListenBtns = document.querySelectorAll('.stop-listen-btn');
             const translateBtns = document.querySelectorAll('.translate-question-btn');
             const untranslateBtns = document.querySelectorAll('.untranslate-question-btn');
             const importantBtns = document.querySelectorAll('.important-btn');
-            const attachMediaBtns = document.querySelectorAll('.attach-media-btn');
-            
             console.log('✅ ALL FEATURES LOADED AND READY:');
             console.log(`  📊 Total Questions: ${questions.length}`);
             console.log(`  📝 View Mode: Grid (All questions displayed)`);
             console.log(`  💬 Chat Buttons: ${chatBtns.length}`);
             console.log(`  🎥 Sources Buttons: ${youtubeBtns.length}`);
             console.log(`  🖊️ Highlight Buttons: ${highlightBtns.length}`);
+            console.log(`  🗑️ Unhighlight Buttons: ${unhighlightBtns.length}`);
             console.log(`  🔊 Listen Buttons: ${listenBtns.length}`);
             console.log(`  ⏹️ Stop Listen Buttons: ${stopListenBtns.length}`);
             console.log(`  🌐 Translate Buttons: ${translateBtns.length}`);
             console.log(`  🔄 Untranslate Buttons: ${untranslateBtns.length}`);
             console.log(`  ❤️ Save Buttons: ${importantBtns.length}`);
-            console.log(`  📎 Attach Media Buttons: ${attachMediaBtns.length}`);
             console.log('\n✅ All questions and answers are displayed with all features ready!');
         }, 100);
 
@@ -2157,6 +2191,53 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Attach media button removed
+
+        // Add unhighlight button handlers (per question card)
+        document.querySelectorAll('.unhighlight-question-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const questionId = parseInt(btn.getAttribute('data-question-id'));
+                if (!questionId) return;
+                
+                // Clear all highlights for this question
+                saveQuestionHighlights(questionId, []);
+                
+                // Find all answer elements for this question
+                const allAnswerElements = document.querySelectorAll(`.answer-text[data-question-id="${questionId}"]`);
+                
+                allAnswerElements.forEach(answerElement => {
+                    // Remove all highlight spans from the DOM
+                    const highlightSpans = answerElement.querySelectorAll('span.highlight');
+                    highlightSpans.forEach(span => {
+                        const parent = span.parentNode;
+                        if (parent) {
+                            parent.replaceChild(document.createTextNode(span.textContent), span);
+                        }
+                    });
+                    
+                    // Normalize the DOM
+                    answerElement.normalize();
+                    
+                    // Re-apply the answer text without highlights
+                    const question = allQuestions.find(q => q.id === questionId);
+                    if (question && question.answer) {
+                        const hasAnswerLabel = answerElement.textContent.includes('Answer:');
+                        const formattedAnswer = question.answer.replace(/\n/g, '<br>');
+                        if (hasAnswerLabel) {
+                            answerElement.innerHTML = '<strong>Answer:</strong> ' + escapeHtml(question.answer).replace(/\n/g, '<br>');
+                        } else {
+                            answerElement.innerHTML = escapeHtml(question.answer).replace(/\n/g, '<br>');
+                        }
+                    } else {
+                        // If no question data, just remove highlights from current content
+                        const cleanText = answerElement.textContent || answerElement.innerText || '';
+                        answerElement.innerHTML = escapeHtml(cleanText);
+                    }
+                });
+                
+                console.log(`✅ All highlights removed from question ${questionId}`);
+            });
+        });
 
         // Add highlight button handlers - Find answer element within the question card
         document.querySelectorAll('.highlight-mode-btn').forEach(btn => {
@@ -2552,14 +2633,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Add attach media button handlers
-        document.querySelectorAll('.attach-media-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const questionId = parseInt(btn.getAttribute('data-question-id'));
-                console.log('✅ Attach Media clicked for question:', questionId);
-                openMediaModal(questionId);
-            });
-        });
     }
 
     // Media Management Functions
