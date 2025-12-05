@@ -4,15 +4,41 @@
  * Handles PDF upload and stores metadata in database
  */
 
-// Enable error reporting for debugging
+// Suppress all output except JSON
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
+ini_set('html_errors', 0); // Disable HTML formatting of errors
+ob_start(); // Start output buffering to catch any unwanted output
+
+// Custom error handler to catch all errors and convert to JSON
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    // Don't handle errors if they were suppressed with @
+    if (!(error_reporting() & $errno)) {
+        return false;
+    }
+    
+    // Clear any output
+    ob_clean();
+    
+    // Send JSON error response
+    header('Content-Type: application/json');
+    http_response_code(500);
+    echo json_encode([
+        'error' => 'PHP Error',
+        'message' => $errstr,
+        'file' => basename($errfile),
+        'line' => $errline,
+        'type' => $errno
+    ]);
+    exit;
+});
 
 // Set error handler for fatal errors
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error !== NULL && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        ob_clean();
         header('Content-Type: application/json');
         http_response_code(500);
         echo json_encode([
@@ -38,19 +64,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    ob_clean();
     http_response_code(405);
+    header('Content-Type: application/json');
     echo json_encode(['error' => 'Method not allowed', 'method' => $_SERVER['REQUEST_METHOD']]);
     exit;
 }
 
 try {
+    // Clear any output buffer
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
+    
     // Check if file was uploaded
     if (!isset($_FILES['file'])) {
+        ob_clean();
         http_response_code(400);
+        header('Content-Type: application/json');
         echo json_encode([
             'error' => 'No file uploaded',
             'message' => 'Please select a PDF file to upload'
         ]);
+        ob_end_flush();
         exit;
     }
 
@@ -72,25 +109,56 @@ try {
     }
 
     // Validate file type
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mimeType = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
+    $mimeType = null;
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo && file_exists($file['tmp_name'])) {
+            $mimeType = finfo_file($finfo, $file['tmp_name']);
+            finfo_close($finfo);
+        }
+    }
+    
+    // Fallback: check file extension and MIME type from $_FILES
+    if (!$mimeType) {
+        $mimeType = $file['type'] ?? null;
+        if (!$mimeType) {
+            $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            if ($extension === 'pdf') {
+                $mimeType = 'application/pdf';
+            }
+        }
+    }
     
     if ($mimeType !== 'application/pdf') {
-        throw new Exception('Invalid file type. Only PDF files are allowed.');
+        ob_clean();
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'error' => 'Invalid file type',
+            'message' => 'Only PDF files are allowed. Detected type: ' . ($mimeType ?: 'unknown')
+        ]);
+        ob_end_flush();
+        exit;
     }
 
-    // Validate file size (max 10MB)
-    $maxSize = 10 * 1024 * 1024; // 10MB in bytes
-    if ($file['size'] > $maxSize) {
-        throw new Exception('File too large. Maximum size is 10MB.');
-    }
+    // File size validation removed - users can upload files of any size
 
     // Get content text from POST data
     $contentText = $_POST['content_text'] ?? '';
     
-    if (empty($contentText)) {
-        throw new Exception('PDF content text is required');
+    // Trim whitespace and check if actually empty
+    $contentText = trim($contentText);
+    
+    if (empty($contentText) || strlen($contentText) < 10) {
+        ob_clean();
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'error' => 'Validation failed',
+            'message' => 'PDF content text is required and must be at least 10 characters long. Please ensure the PDF text was extracted correctly.'
+        ]);
+        ob_end_flush();
+        exit;
     }
 
     // Get user ID from localStorage (passed as form data)
@@ -144,7 +212,14 @@ try {
     // Create uploads directory if it doesn't exist
     $uploadDir = __DIR__ . '/../../uploads/pdfs';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+        if (!@mkdir($uploadDir, 0755, true)) {
+            throw new Exception('Failed to create upload directory. Please check permissions.');
+        }
+    }
+    
+    // Check if directory is writable
+    if (!is_writable($uploadDir)) {
+        throw new Exception('Upload directory is not writable. Please check permissions.');
     }
 
     // Generate unique filename
@@ -183,7 +258,14 @@ try {
     $stmt->execute([$pdfId]);
     $pdf = $stmt->fetch(PDO::FETCH_ASSOC);
 
+    // Clear any output buffer before sending JSON
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
+    
     http_response_code(201);
+    header('Content-Type: application/json');
     echo json_encode([
         'message' => 'PDF uploaded successfully',
         'pdf' => [
@@ -193,24 +275,57 @@ try {
             'original_name' => $pdf['original_name'],
             'path' => $pdf['path'],
             'file_size' => (int)$pdf['file_size'],
-            'content_length' => strlen($pdf['content_text']),
+            'content_length' => strlen($pdf['content_text'] ?? ''),
             'created_at' => $pdf['created_at'],
         ],
         'url' => '/' . $relativePath
     ]);
+    ob_end_flush();
+    exit; // Ensure no other output
 
 } catch (PDOException $e) {
+    // Clear any output buffer before sending JSON
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
     http_response_code(500);
+    header('Content-Type: application/json');
     echo json_encode([
         'error' => 'Database error',
         'message' => $e->getMessage()
     ]);
+    ob_end_flush();
+    exit;
 } catch (Exception $e) {
-    http_response_code(500);
+    // Clear any output buffer before sending JSON
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
+    http_response_code(400);
+    header('Content-Type: application/json');
     echo json_encode([
         'error' => 'Upload failed',
         'message' => $e->getMessage()
     ]);
+    ob_end_flush();
+    exit;
+} catch (Throwable $e) {
+    // Catch any other errors (including PHP 7+ Throwable)
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'error' => 'Server error',
+        'message' => $e->getMessage(),
+        'type' => get_class($e)
+    ]);
+    ob_end_flush();
+    exit;
 }
 
 

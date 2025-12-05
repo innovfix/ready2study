@@ -136,19 +136,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function getQuestionHighlights(questionId) {
-        try {
-            const response = await HighlightAPI.getByQuestion(questionId);
-            const highlights = response.highlight || response.highlights || [];
-            // Ensure it's an array
-            return Array.isArray(highlights) ? highlights : [];
-        } catch (error) {
-            // Silently fail - API endpoints may not exist (404 is expected for static HTML)
-            // Fallback to localStorage
-            const highlights = getHighlights();
-            const questionHighlights = highlights[questionId] || [];
-            // Ensure it's an array
-            return Array.isArray(questionHighlights) ? questionHighlights : [];
-        }
+        // Use localStorage only - API endpoints don't exist for static HTML
+        // This prevents 404 errors from showing in console
+        const highlights = getHighlights();
+        const questionHighlights = highlights[questionId] || [];
+        // Ensure it's an array
+        return Array.isArray(questionHighlights) ? questionHighlights : [];
     }
 
     async function saveQuestionHighlights(questionId, highlightData) {
@@ -156,12 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
         highlights[questionId] = highlightData;
         saveHighlights(highlights);
         
-        // Save to backend API
-        try {
-            await HighlightAPI.save(questionId, highlightData);
-        } catch (error) {
-            console.error('Failed to save highlights to API:', error);
-        }
+        // Note: API endpoints don't exist for static HTML, so we only use localStorage
+        // This prevents 404 errors from showing in console
     }
 
     async function applyHighlights(questionId, answerElement) {
@@ -1097,6 +1086,112 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
+        // Helper function to translate long text by splitting into chunks (for PDF translate buttons)
+        async function translateTextChunked(text, langpair = 'en|ta', maxLength = 500) {
+            if (!text || text.trim().length === 0) {
+                return '';
+            }
+            
+            // Ensure maxLength doesn't exceed 500 (API limit)
+            maxLength = Math.min(maxLength, 500);
+            
+            // Clean and trim text
+            text = text.trim();
+            
+            if (text.length <= maxLength) {
+                // Text is short enough, translate directly
+                try {
+                    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`);
+                    const data = await response.json();
+                    
+                    if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+                        return data.responseData.translatedText;
+                    } else {
+                        const errorMsg = data.responseDetails || data.responseStatus || 'Unknown error';
+                        throw new Error('Translation failed: ' + errorMsg);
+                    }
+                } catch (error) {
+                    throw new Error('Translation failed: ' + error.message);
+                }
+            }
+            
+            // Text is too long, split into chunks intelligently
+            const chunks = [];
+            let remainingText = text;
+            
+            while (remainingText.length > 0) {
+                if (remainingText.length <= maxLength) {
+                    // Last chunk
+                    chunks.push(remainingText.trim());
+                    break;
+                }
+                
+                // Try to split at sentence boundaries first
+                let chunk = remainingText.substring(0, maxLength);
+                let lastPeriod = chunk.lastIndexOf('.');
+                let lastQuestion = chunk.lastIndexOf('?');
+                let lastExclamation = chunk.lastIndexOf('!');
+                let lastNewline = chunk.lastIndexOf('\n');
+                
+                // Find the best split point
+                let splitPoint = Math.max(lastPeriod, lastQuestion, lastExclamation, lastNewline);
+                
+                if (splitPoint > maxLength * 0.5) {
+                    // Good split point found (at least halfway through)
+                    chunk = remainingText.substring(0, splitPoint + 1).trim();
+                    remainingText = remainingText.substring(splitPoint + 1).trim();
+                } else {
+                    // No good sentence boundary, try comma
+                    let lastComma = chunk.lastIndexOf(',');
+                    if (lastComma > maxLength * 0.5) {
+                        chunk = remainingText.substring(0, lastComma + 1).trim();
+                        remainingText = remainingText.substring(lastComma + 1).trim();
+                    } else {
+                        // No good punctuation, split at space
+                        let lastSpace = chunk.lastIndexOf(' ');
+                        if (lastSpace > maxLength * 0.5) {
+                            chunk = remainingText.substring(0, lastSpace).trim();
+                            remainingText = remainingText.substring(lastSpace + 1).trim();
+                        } else {
+                            // Force split at maxLength
+                            chunk = remainingText.substring(0, maxLength).trim();
+                            remainingText = remainingText.substring(maxLength).trim();
+                        }
+                    }
+                }
+                
+                if (chunk.length > 0) {
+                    chunks.push(chunk);
+                }
+            }
+            
+            // Translate each chunk sequentially
+            const translatedChunks = [];
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                
+                // Double-check chunk length (should never exceed maxLength, but be safe)
+                const safeChunk = chunk.length > maxLength ? chunk.substring(0, maxLength - 3) + '...' : chunk;
+                
+                try {
+                    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeChunk)}&langpair=${langpair}`);
+                    const data = await response.json();
+                    
+                    if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+                        translatedChunks.push(data.responseData.translatedText);
+                    } else {
+                        const errorMsg = data.responseDetails || data.responseStatus || 'Unknown error';
+                        throw new Error('Translation failed for chunk ' + (i + 1) + ': ' + errorMsg);
+                    }
+                } catch (error) {
+                    throw new Error('Translation failed for chunk ' + (i + 1) + ': ' + error.message);
+                }
+            }
+            
+            // Join all translated chunks with spaces
+            return translatedChunks.join(' ');
+        }
+        
         // Translate button
         document.querySelectorAll('.pdf-translate-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
@@ -1109,25 +1204,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translating...';
                 
                 try {
-                    const questionResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(questionText)}&langpair=en|ta`);
-                    const questionData = await questionResponse.json();
-                    const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(answerText)}&langpair=en|ta`);
-                    const answerData = await answerResponse.json();
+                    // Translate question and answer using chunked translation for long texts
+                    const questionTranslation = await translateTextChunked(questionText, 'en|ta', 500);
+                    const answerTranslation = await translateTextChunked(answerText, 'en|ta', 500);
                     
-                    if (questionData.responseStatus === 200 && answerData.responseStatus === 200) {
-                        const card = document.querySelector(`.pdf-question-card[data-question-id="${questionId}"]`);
-                        if (card) {
-                            const questionEl = card.querySelector('.pdf-question-card > div:has(strong)');
-                            const answerEl = card.querySelector(`.pdf-answer-text[data-question-id="${questionId}"]`);
-                            if (questionEl && answerEl) {
-                                questionEl.innerHTML = `<strong>Question:</strong> ${questionData.responseData.translatedText}<br><small style="color: #64748b;">(${questionText})</small>`;
-                                answerEl.innerHTML = `${answerData.responseData.translatedText}<br><small style="color: #64748b;">(${answerText})</small>`;
-                            }
+                    const card = document.querySelector(`.pdf-question-card[data-question-id="${questionId}"]`);
+                    if (card) {
+                        const questionEl = card.querySelector('.pdf-question-card > div:has(strong)');
+                        const answerEl = card.querySelector(`.pdf-answer-text[data-question-id="${questionId}"]`);
+                        if (questionEl && answerEl) {
+                            questionEl.innerHTML = `<strong>Question:</strong> ${questionTranslation}<br><small style="color: #64748b;">(${questionText})</small>`;
+                            answerEl.innerHTML = `${answerTranslation}<br><small style="color: #64748b;">(${answerText})</small>`;
                         }
                     }
                 } catch (error) {
                     console.error('Translation error:', error);
-                    alert('Translation failed. Please try again.');
+                    alert('Translation failed. Please try again. Error: ' + error.message);
                 } finally {
                     btn.disabled = false;
                     btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg> Translate';
@@ -1969,11 +2061,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${questionText}
                     </div>
                     
-                    <!-- Related Images Section -->
-                    <div class="related-images-section" data-question-id="${q.id}" style="margin-bottom: 1rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
-                        <!-- Images will be loaded here -->
-                    </div>
-                    
                     ${mediaHtml}
                     
                     <!-- Answer - Always Visible -->
@@ -2058,9 +2145,6 @@ document.addEventListener('DOMContentLoaded', () => {
             container.appendChild(card);
             console.log('✓ Question card appended:', questionText.substring(0, 50) + '...');
             console.log('  Answer visible:', answerText !== 'No answer provided' ? 'Yes' : 'No');
-            
-            // Load related images for this question
-            loadRelatedImages(q.id, q.question);
         });
         
         // After rendering, ensure all answers are visible and attach all event handlers
@@ -2480,6 +2564,112 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        // Helper function to translate long text by splitting into chunks
+        async function translateLongText(text, langpair = 'en|ta', maxLength = 500) {
+            if (!text || text.trim().length === 0) {
+                return '';
+            }
+            
+            // Ensure maxLength doesn't exceed 500 (API limit)
+            maxLength = Math.min(maxLength, 500);
+            
+            // Clean and trim text
+            text = text.trim();
+            
+            if (text.length <= maxLength) {
+                // Text is short enough, translate directly
+                try {
+                    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`);
+                    const data = await response.json();
+                    
+                    if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+                        return data.responseData.translatedText;
+                    } else {
+                        const errorMsg = data.responseDetails || data.responseStatus || 'Unknown error';
+                        throw new Error('Translation failed: ' + errorMsg);
+                    }
+                } catch (error) {
+                    throw new Error('Translation failed: ' + error.message);
+                }
+            }
+            
+            // Text is too long, split into chunks intelligently
+            const chunks = [];
+            let remainingText = text;
+            
+            while (remainingText.length > 0) {
+                if (remainingText.length <= maxLength) {
+                    // Last chunk
+                    chunks.push(remainingText.trim());
+                    break;
+                }
+                
+                // Try to split at sentence boundaries first
+                let chunk = remainingText.substring(0, maxLength);
+                let lastPeriod = chunk.lastIndexOf('.');
+                let lastQuestion = chunk.lastIndexOf('?');
+                let lastExclamation = chunk.lastIndexOf('!');
+                let lastNewline = chunk.lastIndexOf('\n');
+                
+                // Find the best split point
+                let splitPoint = Math.max(lastPeriod, lastQuestion, lastExclamation, lastNewline);
+                
+                if (splitPoint > maxLength * 0.5) {
+                    // Good split point found (at least halfway through)
+                    chunk = remainingText.substring(0, splitPoint + 1).trim();
+                    remainingText = remainingText.substring(splitPoint + 1).trim();
+                } else {
+                    // No good sentence boundary, try comma
+                    let lastComma = chunk.lastIndexOf(',');
+                    if (lastComma > maxLength * 0.5) {
+                        chunk = remainingText.substring(0, lastComma + 1).trim();
+                        remainingText = remainingText.substring(lastComma + 1).trim();
+                    } else {
+                        // No good punctuation, split at space
+                        let lastSpace = chunk.lastIndexOf(' ');
+                        if (lastSpace > maxLength * 0.5) {
+                            chunk = remainingText.substring(0, lastSpace).trim();
+                            remainingText = remainingText.substring(lastSpace + 1).trim();
+                        } else {
+                            // Force split at maxLength
+                            chunk = remainingText.substring(0, maxLength).trim();
+                            remainingText = remainingText.substring(maxLength).trim();
+                        }
+                    }
+                }
+                
+                if (chunk.length > 0) {
+                    chunks.push(chunk);
+                }
+            }
+            
+            // Translate each chunk sequentially
+            const translatedChunks = [];
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                
+                // Double-check chunk length (should never exceed maxLength, but be safe)
+                const safeChunk = chunk.length > maxLength ? chunk.substring(0, maxLength - 3) + '...' : chunk;
+                
+                try {
+                    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeChunk)}&langpair=${langpair}`);
+                    const data = await response.json();
+                    
+                    if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
+                        translatedChunks.push(data.responseData.translatedText);
+                    } else {
+                        const errorMsg = data.responseDetails || data.responseStatus || 'Unknown error';
+                        throw new Error('Translation failed for chunk ' + (i + 1) + ': ' + errorMsg);
+                    }
+                } catch (error) {
+                    throw new Error('Translation failed for chunk ' + (i + 1) + ': ' + error.message);
+                }
+            }
+            
+            // Join all translated chunks with spaces
+            return translatedChunks.join(' ');
+        }
+        
         // Add translate question button handlers - Translate FULL answer to Tamil
         document.querySelectorAll('.translate-question-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
@@ -2523,40 +2713,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw new Error('Answer text is empty');
                     }
                     
-                    // Translate the FULL answer text to Tamil
-                    const answerResponse = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(fullAnswerText)}&langpair=en|ta`);
-                    const answerData = await answerResponse.json();
+                    // Translate the FULL answer text to Tamil (handles long text automatically)
+                    const tamilTranslation = await translateLongText(fullAnswerText, 'en|ta', 500);
+                        
+                    // Store original answer for reverting
+                    answerElement.setAttribute('data-original-text', fullAnswerText);
+                    answerElement.setAttribute('data-translated-text', tamilTranslation);
                     
-                    if (answerData.responseStatus === 200 && answerData.responseData.translatedText) {
-                        const tamilTranslation = answerData.responseData.translatedText;
-                        
-                        // Store original answer for reverting
-                        answerElement.setAttribute('data-original-text', fullAnswerText);
-                        answerElement.setAttribute('data-translated-text', tamilTranslation);
-                        
-                        // Update answer display - Show Tamil translation prominently
-                        answerElement.innerHTML = `
-                            <div style="padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 0.75rem; font-family: 'Noto Sans Tamil', sans-serif; font-size: 1rem; line-height: 1.8; color: #1e293b;">
-                                <strong style="color: #10b981; font-size: 1.1rem; display: block; margin-bottom: 0.5rem;">தமிழ்:</strong>
-                                <div style="font-size: 1rem; line-height: 1.8;">${escapeHtml(tamilTranslation)}</div>
-                            </div>
-                            <div style="padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #64748b; font-size: 0.9rem; line-height: 1.6; color: #64748b;">
-                                <strong style="color: #64748b; display: block; margin-bottom: 0.5rem;">English:</strong>
-                                <div>${escapeHtml(fullAnswerText)}</div>
-                            </div>
-                        `;
-                        
-                        // Show untranslate button, hide translate button
-                        const untranslateBtn = questionCard.querySelector(`.untranslate-question-btn[data-question-id="${questionId}"]`);
-                        if (untranslateBtn) {
-                            untranslateBtn.style.display = 'flex';
-                        }
-                        btn.style.display = 'none';
-                        
-                        console.log(`✅ Full answer translated to Tamil for question ${questionId}`);
-                    } else {
-                        throw new Error('Translation failed: ' + (answerData.responseDetails || 'Unknown error'));
+                    // Update answer display - Show Tamil translation prominently
+                    answerElement.innerHTML = `
+                        <div style="padding: 0.75rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981; margin-bottom: 0.75rem; font-family: 'Noto Sans Tamil', sans-serif; font-size: 1rem; line-height: 1.8; color: #1e293b;">
+                            <strong style="color: #10b981; font-size: 1.1rem; display: block; margin-bottom: 0.5rem;">தமிழ்:</strong>
+                            <div style="font-size: 1rem; line-height: 1.8;">${escapeHtml(tamilTranslation)}</div>
+                        </div>
+                        <div style="padding: 0.75rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid #64748b; font-size: 0.9rem; line-height: 1.6; color: #64748b;">
+                            <strong style="color: #64748b; display: block; margin-bottom: 0.5rem;">English:</strong>
+                            <div>${escapeHtml(fullAnswerText)}</div>
+                        </div>
+                    `;
+                    
+                    // Show untranslate button, hide translate button
+                    const untranslateBtn = questionCard.querySelector(`.untranslate-question-btn[data-question-id="${questionId}"]`);
+                    if (untranslateBtn) {
+                        untranslateBtn.style.display = 'flex';
                     }
+                    btn.style.display = 'none';
+                    
+                    console.log(`✅ Full answer translated to Tamil for question ${questionId}`);
                 } catch (error) {
                     console.error('Translation error:', error);
                     alert('Translation failed. Please try again. Error: ' + error.message);

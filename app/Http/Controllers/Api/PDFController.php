@@ -19,7 +19,7 @@ class PDFController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:pdf|max:10240', // 10MB max
+            'file' => 'required|file|mimes:pdf', // No size limit
             'content_text' => 'nullable|string',
         ]);
 

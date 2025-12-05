@@ -1,6 +1,15 @@
 // Test Logic for Ready2Study
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize timer to 30 minutes FIRST, before anything else
+    let timeRemaining = 30 * 60; // 30 minutes in seconds (1800 seconds)
+    
+    // Update timer display immediately to show 30:00
+    const timerElement = document.getElementById('timer');
+    if (timerElement) {
+        timerElement.textContent = '30:00';
+    }
+    
     // Load Student Info
     const userData = JSON.parse(localStorage.getItem('ready2study_user'));
     if (userData) {
@@ -29,7 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let inputModes = {}; // Store input mode for each question (text/voice)
     let userAnswerHighlights = {}; // Store highlights for user answers
     let highlightMode = {}; // Track highlight mode per question
-    let timeRemaining = 60 * 60; // 60 minutes in seconds
     let timerInterval = null;
     let recognition = null;
     let isRecording = false;
@@ -469,6 +477,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Timer Functions
     function startTimer() {
+        // Clear any existing timer
+        if (timerInterval) {
+            clearInterval(timerInterval);
+        }
+        
+        // Always reset timer to exactly 30 minutes (1800 seconds)
+        timeRemaining = 30 * 60;
+        
+        // Update display immediately
+        updateTimer();
+        
         timerInterval = setInterval(() => {
             timeRemaining--;
             updateTimer();
@@ -825,13 +844,21 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Test initialized with', testQuestions.length, 'questions');
         renderQuestions();
         
+        // Reset timer to 30 minutes (ensure it's not cached)
+        timeRemaining = 30 * 60; // 30 minutes in seconds
+        console.log('⏱️ Timer set to 30 minutes:', timeRemaining, 'seconds');
+        
+        // Update timer display immediately to show 30:00
+        updateTimer();
+        console.log('⏱️ Timer display updated to:', document.getElementById('timer').textContent);
+        
         // Ensure first question is displayed immediately
         setTimeout(() => {
             showQuestion(0);
         }, 50);
         
+        // Start the timer countdown
         startTimer();
-        updateTimer();
     } catch (error) {
         console.error('Error initializing test:', error);
         document.getElementById('testQuestionsContainer').innerHTML = `
