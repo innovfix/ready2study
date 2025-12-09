@@ -867,6 +867,71 @@ document.addEventListener('DOMContentLoaded', () => {
             else {
                 formattedAnswer = answerText.replace(/\n/g, '<br>');
             }
+            
+            // Fix pronouns in questions by extracting nouns from answer
+            function extractNounFromAnswer(answer) {
+                if (!answer || answer === 'No answer provided') return null;
+                
+                const pronouns = ['this', 'these', 'that', 'those', 'then', 'there', 'their', 'they', 'them', 'it', 'its', 'he', 'she', 'him', 'her', 'his', 'hers', 'we', 'us', 'our', 'ours', 'you', 'your', 'yours', 'i', 'me', 'my', 'mine'];
+                const genericWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall'];
+                
+                // Extract meaningful nouns (words that are 5+ chars and not pronouns)
+                const words = answer.toLowerCase().split(/\s+/)
+                    .map(w => w.replace(/[^a-z0-9]/g, ''))
+                    .filter(w => w.length >= 5 && !pronouns.includes(w) && !genericWords.includes(w));
+                
+                // Look for capitalized terms (likely proper nouns/concepts)
+                const capitalizedTerms = answer.match(/\b[A-Z][a-z]{4,}(?:\s+[A-Z][a-z]+)*\b/g) || [];
+                const validTerms = capitalizedTerms
+                    .filter(term => {
+                        const lower = term.toLowerCase();
+                        const words = term.split(/\s+/);
+                        for (const word of words) {
+                            if (pronouns.includes(word.toLowerCase())) return false;
+                        }
+                        return term.length >= 5;
+                    })
+                    .slice(0, 3);
+                
+                // Prefer capitalized terms, then frequent words
+                if (validTerms.length > 0) {
+                    return validTerms[0];
+                } else if (words.length > 0) {
+                    // Get most frequent meaningful word
+                    const wordFreq = {};
+                    words.forEach(w => wordFreq[w] = (wordFreq[w] || 0) + 1);
+                    const sorted = Object.entries(wordFreq).sort((a, b) => b[1] - a[1]);
+                    if (sorted.length > 0) {
+                        return sorted[0][0].charAt(0).toUpperCase() + sorted[0][0].slice(1);
+                    }
+                }
+                
+                return null;
+            }
+            
+            // Ensure question text exists and fix pronouns
+            let questionText = q.question || q.question_text || 'No question text';
+            
+            // Check if question contains pronouns and fix it
+            const pronounPattern = /\b(what is|explain|describe|write about|discuss)\s+(this|these|that|those|then|there|their|they|them|it|its|he|she|him|her|his|hers|we|us|our|ours|you|your|yours|i|me|my|mine)\b/gi;
+            if (pronounPattern.test(questionText)) {
+                const noun = extractNounFromAnswer(answerText);
+                if (noun) {
+                    // Replace pronoun with actual noun
+                    questionText = questionText.replace(/\b(this|these|that|those|then|there|their|they|them|it|its|he|she|him|her|his|hers|we|us|our|ours|you|your|yours|i|me|my|mine)\b/gi, noun);
+                } else {
+                    // If no noun found, try to extract from answer text more aggressively
+                    const sentences = answerText.split(/[.!?]+/).filter(s => s.trim().length > 20);
+                    for (const sentence of sentences) {
+                        const noun = extractNounFromAnswer(sentence);
+                        if (noun) {
+                            questionText = questionText.replace(/\b(this|these|that|those|then|there|their|they|them|it|its|he|she|him|her|his|hers|we|us|our|ours|you|your|yours|i|me|my|mine)\b/gi, noun);
+                            break;
+                        }
+                    }
+                }
+            }
+            
             const imageHtml = q.image ? `<div class="answer-image-container"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image"></div>` : '';
             
             const questionMedia = getQuestionMedia(q.id);
@@ -904,7 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     <!-- Question Box with Blue Border - Displayed FIRST -->
                     <div style="font-size: 1rem; font-weight: 600; color: #0f172a; line-height: 1.6; padding: 1.25rem; background: #ffffff; border-radius: 0.5rem; border: 2px solid #3b82f6; margin-bottom: 1rem;">
-                        ${q.question}
+                        ${questionText}
                     </div>
                     
                     <!-- Related Images Section -->

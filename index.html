@@ -279,26 +279,58 @@
                     // Extract sentences
                     const sentences = cleanText.split(/[.!?]+/).filter(s => s.trim().length > 15);
                     
+                    // Pronoun list for filtering (shared across functions)
+                    const pronounList = ['this', 'these', 'that', 'those', 'then', 'there', 'their', 'they', 'them', 'it', 'its', 'he', 'she', 'him', 'her', 'his', 'hers', 'we', 'us', 'our', 'ours', 'you', 'your', 'yours', 'i', 'me', 'my', 'mine', 'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how'];
+                    
                     // Extract important nouns and concepts (words that are capitalized or appear multiple times)
                     const words = cleanText.toLowerCase().split(/\s+/);
                     const wordFreq = {};
+                    
                     words.forEach(w => {
                         const clean = w.replace(/[^a-z0-9]/g, '');
-                        if (clean.length > 4) {
+                        // Only count words that are at least 5 chars and not pronouns
+                        if (clean.length >= 5 && !pronounList.includes(clean)) {
                             wordFreq[clean] = (wordFreq[clean] || 0) + 1;
                         }
                     });
                     
-                    // Get most frequent meaningful words
+                    // Get most frequent meaningful words (exclude pronouns)
                     const importantWords = Object.entries(wordFreq)
-                        .filter(([w, count]) => count > 1 && w.length > 4)
+                        .filter(([w, count]) => count > 0 && w.length >= 5 && !pronounList.includes(w))
                         .sort((a, b) => b[1] - a[1])
                         .slice(0, 10)
                         .map(([w]) => w);
                     
-                    // Extract capitalized terms (likely concepts)
+                    // Extract capitalized terms (likely concepts) - filter out pronouns
                     const capitalizedTerms = cleanText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
-                    const uniqueCapTerms = [...new Set(capitalizedTerms)].slice(0, 5);
+                    const uniqueCapTerms = [...new Set(capitalizedTerms)]
+                        .filter(term => {
+                            const lowerTerm = term.toLowerCase().replace(/[^a-z0-9]/g, '');
+                            const words = term.split(/\s+/);
+                            
+                            // Filter out single-word pronouns and common words
+                            if (words.length === 1) {
+                                if (pronounList.includes(lowerTerm)) {
+                                    return false;
+                                }
+                                // Single words must be at least 5 characters (to avoid "We", "It", etc.)
+                                if (lowerTerm.length < 5) {
+                                    return false;
+                                }
+                            }
+                            
+                            // Filter out if any word in the term is a pronoun
+                            for (const word of words) {
+                                const cleanWord = word.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                if (pronounList.includes(cleanWord)) {
+                                    return false;
+                                }
+                            }
+                            
+                            // Minimum length check
+                            return term.length >= 5;
+                        })
+                        .slice(0, 5);
                     
                     return {
                         sentences: sentences,
@@ -327,23 +359,159 @@
                     
                     if (answerText.length < 30) return null;
                     
+                    // Filter out generic/meaningless words, pronouns, and common words
+                    const genericWords = ['this', 'these', 'that', 'those', 'then', 'there', 'their', 'they', 'them', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'it', 'its', 'he', 'she', 'him', 'her', 'his', 'hers', 'we', 'us', 'our', 'ours', 'you', 'your', 'yours', 'i', 'me', 'my', 'mine', 'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how'];
+                    
+                    // Helper function to extract meaningful topic from text
+                    function extractMeaningfulTopic(text) {
+                        // Remove generic words and extract meaningful nouns/concepts
+                        const words = text.toLowerCase().split(/\s+/)
+                            .filter(w => {
+                                const clean = w.replace(/[^a-z0-9]/g, '');
+                                // Require longer words (at least 4 chars) to avoid pronouns
+                                return clean.length >= 4 && !genericWords.includes(clean);
+                            });
+                        
+                        // Look for meaningful phrases (2-4 words) - prefer multi-word topics
+                        if (words.length >= 2) {
+                            const phrase = words.slice(0, 3).map((w, i) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+                            // Validate the phrase doesn't contain pronouns
+                            if (isValidTopic(phrase)) {
+                                return phrase;
+                            }
+                        } else if (words.length === 1) {
+                            // Single word - must be validated
+                            const word = words[0].charAt(0).toUpperCase() + words[0].slice(1);
+                            if (isValidTopic(word) && word.length >= 5) {
+                                return word;
+                            }
+                        }
+                        return null;
+                    }
+                    
+                    // Check if topic contains pronouns or generic words
+                    function isValidTopic(topic) {
+                        if (!topic || topic.length < 5) return false;
+                        const lowerTopic = topic.toLowerCase();
+                        const topicWords = lowerTopic.split(/\s+/);
+                        
+                        // Check if any word in the topic is a pronoun or generic word
+                        for (const word of topicWords) {
+                            const clean = word.replace(/[^a-z0-9]/g, '');
+                            if (genericWords.includes(clean)) {
+                                return false;
+                            }
+                        }
+                        
+                        // Check if topic is just a single pronoun or generic word
+                        if (topicWords.length === 1) {
+                            const singleWord = topicWords[0].replace(/[^a-z0-9]/g, '');
+                            if (genericWords.includes(singleWord)) {
+                                return false;
+                            }
+                            // Single words must be longer (at least 5 chars) to avoid pronouns
+                            if (singleWord.length < 5) {
+                                return false;
+                            }
+                        }
+                        
+                        // Additional check: if topic is a single short word, reject it
+                        if (topicWords.length === 1 && topic.replace(/[^a-z0-9]/gi, '').length < 5) {
+                            return false;
+                        }
+                        
+                        return true;
+                    }
+                    
                     // Identify the main topic/concept from the passage
                     let mainTopic = '';
                     
-                    // Try to find the main subject/topic
+                    // Try to find the main subject/topic - filter out pronouns immediately
                     if (concepts.capitalizedTerms.length > 0) {
-                        mainTopic = concepts.capitalizedTerms[0];
-                    } else if (concepts.importantWords.length > 0) {
-                        // Capitalize first letter of important word
-                        mainTopic = concepts.importantWords[0].charAt(0).toUpperCase() + concepts.importantWords[0].slice(1);
-                    } else {
-                        // Extract first meaningful phrase from first sentence
-                        const firstSentence = sentences[0].trim();
-                        const words = firstSentence.split(/\s+/).filter(w => w.length > 3);
-                        if (words.length > 0) {
-                            mainTopic = words.slice(0, 3).join(' ');
+                        // Use first capitalized term that is NOT a pronoun
+                        for (const term of concepts.capitalizedTerms) {
+                            if (isValidTopic(term)) {
+                                mainTopic = term;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If no valid capitalized term, try important words
+                    if (!mainTopic && concepts.importantWords.length > 0) {
+                        // Use important words, but filter out generic ones
+                        const meaningfulWords = concepts.importantWords.filter(w => {
+                            const clean = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+                            return !genericWords.includes(clean) && w.length > 4;
+                        });
+                        if (meaningfulWords.length > 0) {
+                            mainTopic = meaningfulWords[0].charAt(0).toUpperCase() + meaningfulWords[0].slice(1);
+                        }
+                    }
+                    
+                    // If still no good topic, extract from sentences
+                    if (!mainTopic || !isValidTopic(mainTopic)) {
+                        for (let i = 0; i < Math.min(5, sentences.length); i++) {
+                            const topic = extractMeaningfulTopic(sentences[i]);
+                            if (topic && isValidTopic(topic)) {
+                                mainTopic = topic;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Final fallback - use first meaningful phrase from passage
+                    if (!mainTopic || !isValidTopic(mainTopic)) {
+                        const topic = extractMeaningfulTopic(passage);
+                        if (topic && isValidTopic(topic)) {
+                            mainTopic = topic;
                         } else {
-                            mainTopic = firstSentence.substring(0, 50);
+                            // Last resort - use first sentence but skip generic words
+                            const firstSentence = sentences[0] || passage;
+                            const words = firstSentence.split(/\s+/)
+                                .filter(w => {
+                                    const clean = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                    return clean.length > 4 && !genericWords.includes(clean);
+                                });
+                            if (words.length > 0) {
+                                const candidateTopic = words.slice(0, 3).map((w, i) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+                                if (isValidTopic(candidateTopic)) {
+                                    mainTopic = candidateTopic;
+                                } else {
+                                    // Try to find a better topic from important words
+                                    if (concepts.importantWords.length > 0) {
+                                        const meaningfulWords = concepts.importantWords
+                                            .filter(w => !genericWords.includes(w.toLowerCase()) && w.length > 4)
+                                            .slice(0, 2);
+                                        if (meaningfulWords.length > 0) {
+                                            mainTopic = meaningfulWords.map((w, i) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+                                        } else {
+                                            mainTopic = 'the concept';
+                                        }
+                                    } else {
+                                        mainTopic = 'the concept';
+                                    }
+                                }
+                            } else {
+                                mainTopic = 'the concept';
+                            }
+                        }
+                    }
+                    
+                    // Final validation - ensure mainTopic is valid before generating question
+                    if (!mainTopic || !isValidTopic(mainTopic) || mainTopic === 'the concept') {
+                        // Try one more time to extract a valid topic
+                        for (let i = 0; i < Math.min(10, sentences.length); i++) {
+                            const topic = extractMeaningfulTopic(sentences[i]);
+                            if (topic && isValidTopic(topic)) {
+                                mainTopic = topic;
+                                break;
+                            }
+                        }
+                        // If still no valid topic, skip this question
+                        if (!mainTopic || !isValidTopic(mainTopic) || mainTopic === 'the concept') {
+                            console.warn('Could not extract valid topic from passage, skipping question');
+                            return null;
                         }
                     }
                     
@@ -385,20 +553,45 @@
                     const normalizedQuestion = questionText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
                     const normalizedAnswer = answerText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
                     
-                    // Check if question and answer are too similar
+                    // Check if question and answer are too similar or topic is invalid
+                    const topicLower = mainTopic.toLowerCase();
+                    const hasInvalidWords = genericWords.some(word => topicLower.includes(word) && topicLower.split(/\s+/).some(w => w.replace(/[^a-z0-9]/g, '') === word));
+                    
                     if (normalizedQuestion === normalizedAnswer || 
                         normalizedAnswer.includes(normalizedQuestion) && normalizedAnswer.length < normalizedQuestion.length * 2 ||
-                        normalizedQuestion.length >= normalizedAnswer.length) {
-                        // If too similar, try to extract a better topic
-                        const betterTopic = sentences[0].split(/\s+/).slice(0, 4).join(' ');
-                        if (marks === 1) {
-                            questionText = `What is ${betterTopic}?`;
-                        } else if (marks === 2) {
-                            questionText = `Explain ${betterTopic}.`;
-                        } else if (marks === 3) {
-                            questionText = `Describe ${betterTopic} in detail.`;
-                        } else {
-                            questionText = `Write a comprehensive answer about ${betterTopic}.`;
+                        normalizedQuestion.length >= normalizedAnswer.length ||
+                        hasInvalidWords || !isValidTopic(mainTopic)) {
+                        // If too similar or topic is generic, try to extract a better topic from different sentences
+                        let betterTopic = null;
+                        for (let i = 1; i < Math.min(10, sentences.length); i++) {
+                            const topic = extractMeaningfulTopic(sentences[i]);
+                            if (topic && isValidTopic(topic)) {
+                                betterTopic = topic;
+                                break;
+                            }
+                        }
+                        
+                        // If still no good topic, use important words from the passage
+                        if (!betterTopic && concepts.importantWords.length > 1) {
+                            const meaningfulWords = concepts.importantWords
+                                .filter(w => !genericWords.includes(w.toLowerCase()) && w.length > 4)
+                                .slice(0, 2);
+                            if (meaningfulWords.length > 0) {
+                                betterTopic = meaningfulWords.map((w, i) => i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+                            }
+                        }
+                        
+                        if (betterTopic) {
+                            mainTopic = betterTopic;
+                            if (marks === 1) {
+                                questionText = `What is ${mainTopic}?`;
+                            } else if (marks === 2) {
+                                questionText = `Explain ${mainTopic}.`;
+                            } else if (marks === 3) {
+                                questionText = `Describe ${mainTopic} in detail.`;
+                            } else {
+                                questionText = `Write a comprehensive answer about ${mainTopic}.`;
+                            }
                         }
                     }
                     

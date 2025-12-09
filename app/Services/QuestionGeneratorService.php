@@ -114,8 +114,11 @@ CRITICAL INSTRUCTIONS:
 1. Questions and answers MUST be completely different - never use the same text for both question and answer
 2. Questions should be exam-style questions (e.g., "What is...?", "Explain...", "Describe...", "Compare...")
 3. DO NOT use prefixes like "Explain and solve the following problem:", "Solve the following:", "What is the solution to:" - just write the question directly
-4. Answers should be detailed explanations that answer the question, not just repeat the question text
-4. Generate an appropriate mix of questions:
+4. DO NOT use generic words, pronouns, or common words like "This", "These", "That", "Then", "There", "It", "They", "We", "You" as the main topic in questions (e.g., avoid "Describe This in detail" or "Write about Then" - instead use actual concepts like "Describe photosynthesis in detail" or "Write about cellular respiration")
+5. Questions must reference specific concepts, topics, or subjects from the PDF content - never use vague references, pronouns, or generic words
+6. Extract actual nouns, concepts, or topics from the content - never use pronouns or function words as topics
+7. Answers should be detailed explanations that answer the question, not just repeat the question text
+8. Generate an appropriate mix of questions:
    - 1-mark questions: Simple recall, definitions, basic facts (generate 3-5 questions)
      Example: Question: "What is photosynthesis?" Answer: "Photosynthesis is the process by which plants convert light energy into chemical energy..."
    - 2-mark questions: Short explanations, brief comparisons (generate 3-5 questions)
@@ -124,10 +127,11 @@ CRITICAL INSTRUCTIONS:
      Example: Question: "Describe the process of protein synthesis in detail." Answer: "Protein synthesis involves transcription where DNA is copied to mRNA in the nucleus, followed by translation where mRNA is read by ribosomes to assemble amino acids into proteins..."
    - 10-mark questions: Comprehensive answers, essays, detailed analysis (generate 1-2 questions)
      Example: Question: "Discuss the causes and consequences of climate change." Answer: "Climate change is caused by greenhouse gas emissions from human activities such as burning fossil fuels, deforestation, and industrial processes. The consequences include rising global temperatures, melting ice caps, sea level rise, extreme weather events, and impacts on biodiversity..."
-5. Each question must have a detailed answer appropriate for its mark value
-6. Questions should cover different topics/concepts from the PDF
-7. Answers should be accurate, comprehensive, and educational
-8. DO NOT use passage text directly as questions - convert passages into proper exam questions
+9. Each question must have a detailed answer appropriate for its mark value
+10. Questions should cover different topics/concepts from the PDF
+11. Answers should be accurate, comprehensive, and educational
+12. DO NOT use passage text directly as questions - convert passages into proper exam questions
+13. Always extract the actual subject/concept from the content - if a passage mentions "Then the process continues", extract "the process" not "Then"
 
 Respond ONLY with valid JSON in this exact format:
 {
