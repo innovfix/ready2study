@@ -819,7 +819,54 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.visibility = 'visible';
             card.style.opacity = '1';
 
-            const formattedAnswer = q.answer.replace(/\n/g, '<br>');
+            // Format answer with line breaks if needed
+            const answerText = q.answer || q.answer_text || 'No answer provided';
+            
+            // Format answer as list if it contains list items
+            let formattedAnswer = answerText;
+            
+            // Check if answer contains comma-separated list items (common pattern)
+            // Pattern: "item1, item2, item3" or "item1,item2,item3"
+            if (answerText.includes(',') && !answerText.includes('\n')) {
+                // Split by comma and format as list
+                const items = answerText.split(',').map(item => item.trim()).filter(item => item.length > 0);
+                if (items.length > 1) {
+                    // Format as list with each item on a new line
+                    formattedAnswer = items.map(item => {
+                        // Remove leading numbers/bullets if present
+                        item = item.replace(/^[\d]+[\.\)]\s*/, '').replace(/^[-•]\s*/, '');
+                        return item;
+                    }).join('<br>');
+                } else {
+                    formattedAnswer = answerText.replace(/\n/g, '<br>');
+                }
+            } 
+            // Check for numbered lists (1. item, 2. item, etc.)
+            else if (answerText.match(/^\d+[\.\)]\s+/m) || answerText.match(/\n\d+[\.\)]\s+/)) {
+                formattedAnswer = answerText
+                    .split(/\n/)
+                    .map(line => {
+                        // If line starts with number, keep it; otherwise add line break
+                        if (line.trim().match(/^\d+[\.\)]\s+/)) {
+                            return line.trim();
+                        }
+                        return line;
+                    })
+                    .filter(line => line.trim().length > 0)
+                    .join('<br>');
+            }
+            // Check for bulleted lists (-, •, etc.)
+            else if (answerText.match(/^[-•]\s+/m) || answerText.match(/\n[-•]\s+/)) {
+                formattedAnswer = answerText
+                    .split(/\n/)
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0)
+                    .join('<br>');
+            }
+            // Regular text - just replace newlines with <br>
+            else {
+                formattedAnswer = answerText.replace(/\n/g, '<br>');
+            }
             const imageHtml = q.image ? `<div class="answer-image-container"><img src="${q.image}" alt="Diagram for ${q.question}" class="answer-image"></div>` : '';
             
             const questionMedia = getQuestionMedia(q.id);
@@ -845,16 +892,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             card.innerHTML = `
                 <div style="margin-bottom: 1rem;">
-                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                    <!-- Mark Badge and Question Number -->
+                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
                         <span style="background: ${markColor}; color: white; padding: 0.4rem 1rem; border-radius: 999px; font-weight: 700; font-size: 0.875rem;">
                             ${q.marks} Mark${q.marks > 1 ? 's' : ''}
                         </span>
-                        <span style="color: var(--text-muted); font-size: 0.875rem; font-weight: 600;">
+                        <span style="color: #64748b; font-size: 0.875rem; font-weight: 600;">
                             Q${questionNumber}
                         </span>
                     </div>
                     
-                    <div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.6; padding: 1.25rem; background: #f8fafc; border-radius: 0.5rem; border-left: 4px solid ${markColor}; margin-bottom: 1rem;">
+                    <!-- Question Box with Blue Border - Displayed FIRST -->
+                    <div style="font-size: 1rem; font-weight: 600; color: #0f172a; line-height: 1.6; padding: 1.25rem; background: #ffffff; border-radius: 0.5rem; border: 2px solid #3b82f6; margin-bottom: 1rem;">
                         ${q.question}
                     </div>
                     
@@ -865,12 +914,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     ${mediaHtml}
                     
-                    <div class="answer-section visible" style="display: block !important;">
-                        <div style="font-size: 1.1rem; color: #1e293b; line-height: 1.8; padding: 1.25rem; background: #f0fdf4; border-radius: 0.5rem; border-left: 4px solid #10b981;">
-                            <span style="color: #10b981; font-weight: 700;">Answer:</span> 
-                            <span class="answer-text" data-question-id="${q.id}" style="color: #334155;">
+                    <!-- Dotted Separator Line -->
+                    <div style="border-top: 2px dotted #cbd5e1; margin: 1rem 0;"></div>
+                    
+                    <!-- Answer Box with Green Border - Displayed BELOW Question -->
+                    <div class="answer-section visible" style="display: block !important; margin-top: 1rem;">
+                        <div style="font-size: 0.875rem; color: #1e293b; line-height: 1.6; padding: 1rem; background: #ffffff; border-radius: 0.5rem; border: 2px solid #10b981;">
+                            <div style="color: #10b981; font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                </svg>
+                                Answer:
+                            </div>
+                            <div class="answer-text" data-question-id="${q.id}" style="color: #334155; font-size: 0.875rem; line-height: 1.7;">
                                 ${formattedAnswer}
-                            </span>
+                            </div>
                             ${imageHtml}
                         </div>
                     </div>

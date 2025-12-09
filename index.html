@@ -220,7 +220,8 @@
                     let fullText = '';
                     const totalPages = pdf.numPages;
                     
-                    console.log(`Reading PDF with ${totalPages} pages...`);
+                    console.log(`📄 Reading PDF with ${totalPages} pages...`);
+                    console.log(`📖 Starting to read ALL pages completely...`);
                     
                     // Extract text from EACH AND EVERY page completely
                     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
@@ -246,15 +247,17 @@
                             fullText += pageText.trim();
                             fullText += '\n\n';
                             
-                            console.log(`Page ${pageNum}/${totalPages} extracted (${pageText.length} characters)`);
+                            console.log(`✅ Page ${pageNum}/${totalPages} extracted successfully (${pageText.length} characters)`);
                         } catch (pageError) {
-                            console.error(`Error reading page ${pageNum}:`, pageError);
+                            console.error(`❌ Error reading page ${pageNum}:`, pageError);
                             // Continue with next page even if one fails
                             fullText += `\n--- Page ${pageNum} (Error reading) ---\n\n`;
                         }
                     }
                     
-                    console.log(`PDF extraction complete. Total text length: ${fullText.length} characters`);
+                    console.log(`✅ PDF extraction complete!`);
+                    console.log(`📊 Total text length: ${fullText.length} characters`);
+                    console.log(`📄 Total pages read: ${totalPages}`);
                     return fullText.trim();
                 } catch (error) {
                     console.error('Error extracting text from PDF:', error);
@@ -262,176 +265,466 @@
                 }
             }
 
-            // Function to generate questions from PDF content - includes mathematical problems
+            // Function to generate questions from PDF content - properly separates questions and answers
             function generateQuestionsFromPDF(pdfText) {
                 console.log('Generating questions from PDF content...');
                 console.log('PDF text length:', pdfText.length);
+                console.log('First 500 chars of PDF:', pdfText.substring(0, 500));
                 
-                // Split text into sentences and paragraphs - preserve mathematical content
-                const paragraphs = pdfText.split(/\n\s*\n/).filter(p => p.trim().length > 30);
+                // Helper function to extract key concepts and topics from text
+                function extractKeyConcepts(text) {
+                    // Remove page markers and clean text
+                    let cleanText = text.replace(/--- Page \d+ of \d+ ---/g, '').trim();
+                    
+                    // Extract sentences
+                    const sentences = cleanText.split(/[.!?]+/).filter(s => s.trim().length > 15);
+                    
+                    // Extract important nouns and concepts (words that are capitalized or appear multiple times)
+                    const words = cleanText.toLowerCase().split(/\s+/);
+                    const wordFreq = {};
+                    words.forEach(w => {
+                        const clean = w.replace(/[^a-z0-9]/g, '');
+                        if (clean.length > 4) {
+                            wordFreq[clean] = (wordFreq[clean] || 0) + 1;
+                        }
+                    });
+                    
+                    // Get most frequent meaningful words
+                    const importantWords = Object.entries(wordFreq)
+                        .filter(([w, count]) => count > 1 && w.length > 4)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 10)
+                        .map(([w]) => w);
+                    
+                    // Extract capitalized terms (likely concepts)
+                    const capitalizedTerms = cleanText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
+                    const uniqueCapTerms = [...new Set(capitalizedTerms)].slice(0, 5);
+                    
+                    return {
+                        sentences: sentences,
+                        importantWords: importantWords,
+                        capitalizedTerms: uniqueCapTerms,
+                        fullText: cleanText
+                    };
+                }
                 
-                // Also extract mathematical problems (lines with equations, formulas, calculations)
-                const mathPatterns = pdfText.match(/(?:[0-9]+\s*[+\-*/=]\s*[0-9]+|\([^)]+\)\s*[+\-*/=]|√[0-9]+|∫|∑|π|sin|cos|tan|log|ln)[^.!?]*[.!?]?/g) || [];
+                // Helper function to identify what a passage is about and create a question
+                function createQuestionFromContent(passage, marks) {
+                    if (!passage || passage.trim().length < 30) return null;
+                    
+                    const concepts = extractKeyConcepts(passage);
+                    const sentences = concepts.sentences;
+                    
+                    if (sentences.length === 0) return null;
+                    
+                    // Clean the passage to use as answer
+                    let answerText = passage.trim();
+                    // Remove page markers from answer
+                    answerText = answerText.replace(/--- Page \d+ of \d+ ---/g, '').trim();
+                    // Limit answer length based on marks
+                    const maxAnswerLength = marks === 1 ? 200 : marks === 2 ? 300 : marks === 3 ? 500 : 1000;
+                    answerText = answerText.substring(0, Math.min(maxAnswerLength, answerText.length)).trim();
+                    
+                    if (answerText.length < 30) return null;
+                    
+                    // Identify the main topic/concept from the passage
+                    let mainTopic = '';
+                    
+                    // Try to find the main subject/topic
+                    if (concepts.capitalizedTerms.length > 0) {
+                        mainTopic = concepts.capitalizedTerms[0];
+                    } else if (concepts.importantWords.length > 0) {
+                        // Capitalize first letter of important word
+                        mainTopic = concepts.importantWords[0].charAt(0).toUpperCase() + concepts.importantWords[0].slice(1);
+                    } else {
+                        // Extract first meaningful phrase from first sentence
+                        const firstSentence = sentences[0].trim();
+                        const words = firstSentence.split(/\s+/).filter(w => w.length > 3);
+                        if (words.length > 0) {
+                            mainTopic = words.slice(0, 3).join(' ');
+                        } else {
+                            mainTopic = firstSentence.substring(0, 50);
+                        }
+                    }
+                    
+                    // Check if it's mathematical content
+                    const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(passage);
+                    
+                    // Generate question based on marks
+                    let questionText = '';
+                    
+                    if (hasMath) {
+                        // Mathematical questions
+                        const mathExpr = passage.match(/([0-9+\-*/=()^√∑∫π\s]+)/)?.[0] || '';
+                        if (marks === 1) {
+                            questionText = `${mathExpr.substring(0, 80).trim()}`;
+                        } else if (marks === 2) {
+                            questionText = `${mathExpr.substring(0, 120).trim()}`;
+                        } else {
+                            questionText = `${mathExpr.substring(0, 150).trim()}`;
+                        }
+                    } else {
+                        // Text-based questions - create proper exam questions
+                        if (marks === 1) {
+                            // Simple definition/recall
+                            questionText = `What is ${mainTopic}?`;
+                        } else if (marks === 2) {
+                            // Short explanation
+                            questionText = `Explain ${mainTopic}.`;
+                        } else if (marks === 3) {
+                            // Detailed explanation
+                            questionText = `Describe ${mainTopic} in detail.`;
+                        } else {
+                            // Comprehensive (10 marks)
+                            questionText = `Write a comprehensive answer about ${mainTopic}.`;
+                        }
+                    }
+                    
+                    // CRITICAL: Ensure question and answer are completely different
+                    // Question should ask ABOUT something, answer should explain it
+                    const normalizedQuestion = questionText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+                    const normalizedAnswer = answerText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+                    
+                    // Check if question and answer are too similar
+                    if (normalizedQuestion === normalizedAnswer || 
+                        normalizedAnswer.includes(normalizedQuestion) && normalizedAnswer.length < normalizedQuestion.length * 2 ||
+                        normalizedQuestion.length >= normalizedAnswer.length) {
+                        // If too similar, try to extract a better topic
+                        const betterTopic = sentences[0].split(/\s+/).slice(0, 4).join(' ');
+                        if (marks === 1) {
+                            questionText = `What is ${betterTopic}?`;
+                        } else if (marks === 2) {
+                            questionText = `Explain ${betterTopic}.`;
+                        } else if (marks === 3) {
+                            questionText = `Describe ${betterTopic} in detail.`;
+                        } else {
+                            questionText = `Write a comprehensive answer about ${betterTopic}.`;
+                        }
+                    }
+                    
+                    // Final validation
+                    if (questionText.trim().length < 10 || answerText.trim().length < 30) {
+                        return null;
+                    }
+                    
+                    // Ensure answer is significantly longer than question
+                    if (answerText.length <= questionText.length * 1.5) {
+                        return null; // Answer too short, skip this
+                    }
+                    
+                    return {
+                        question: questionText.trim(),
+                        answer: answerText.trim()
+                    };
+                }
+                
+                // Split text into meaningful sections (paragraphs, sections, etc.)
+                // First, remove page markers
+                let cleanText = pdfText.replace(/--- Page \d+ of \d+ ---/g, '').trim();
+                
+                // Split into paragraphs (double newlines or long single lines)
+                let paragraphs = cleanText.split(/\n\s*\n/).filter(p => p.trim().length > 30);
+                
+                // If not enough paragraphs, try splitting by single newlines for longer sections
+                if (paragraphs.length < 10) {
+                    const lines = cleanText.split('\n').filter(l => l.trim().length > 50);
+                    // Group consecutive lines into paragraphs
+                    let currentPara = '';
+                    lines.forEach(line => {
+                        if (line.trim().length > 0) {
+                            currentPara += line.trim() + ' ';
+                            if (currentPara.length > 200) {
+                                paragraphs.push(currentPara.trim());
+                                currentPara = '';
+                            }
+                        } else if (currentPara.length > 30) {
+                            paragraphs.push(currentPara.trim());
+                            currentPara = '';
+                        }
+                    });
+                    if (currentPara.length > 30) {
+                        paragraphs.push(currentPara.trim());
+                    }
+                }
+                
+                // Remove duplicates and very short paragraphs
+                paragraphs = [...new Set(paragraphs)].filter(p => p.trim().length > 30);
+                
+                console.log(`Found ${paragraphs.length} paragraphs/sections in PDF`);
                 
                 const questions = [];
                 let questionId = 1;
+                const examDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 
-                console.log(`Found ${paragraphs.length} paragraphs and ${mathPatterns.length} mathematical expressions`);
+                // Generate MORE than 20 questions - ensure good distribution
+                // Target: At least 20-25 questions total (minimum 20, aim for 25+)
+                const targetCounts = {
+                    1: Math.max(8, Math.min(12, Math.floor(paragraphs.length / 1.5) || 8)),  // Minimum 8, up to 12 questions
+                    2: Math.max(8, Math.min(12, Math.floor(paragraphs.length / 1.5) || 8)),  // Minimum 8, up to 12 questions
+                    3: Math.max(4, Math.min(8, Math.floor(paragraphs.length / 1.2) || 4)),   // Minimum 4, up to 8 questions
+                    10: Math.max(2, Math.min(4, Math.floor(paragraphs.length / 1.0) || 2))   // Minimum 2, up to 4 questions
+                };
                 
-                // Generate 1-mark questions (simple definitions, short answers, mathematical problems)
-                // First, extract mathematical problems
-                let mathIndex = 0;
-                const oneMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 4)));
+                // Ensure minimum total of 20 questions
+                const totalTarget = targetCounts[1] + targetCounts[2] + targetCounts[3] + targetCounts[10];
+                if (totalTarget < 20) {
+                    // Adjust to ensure at least 20 questions
+                    const shortfall = 20 - totalTarget;
+                    // Distribute shortfall across categories
+                    targetCounts[1] += Math.ceil(shortfall * 0.4);
+                    targetCounts[2] += Math.ceil(shortfall * 0.4);
+                    targetCounts[3] += Math.ceil(shortfall * 0.15);
+                    targetCounts[10] += Math.ceil(shortfall * 0.05);
+                }
                 
-                // Add mathematical problems as 1-mark questions
-                for (let i = 0; i < Math.min(2, mathPatterns.length) && mathIndex < oneMarkCount; i++) {
-                    const mathProblem = mathPatterns[i].trim();
-                    if (mathProblem.length > 10 && mathProblem.length < 200) {
-                        // Extract the mathematical expression
-                        const mathExpr = mathProblem.match(/([0-9+\-*/=()^√∑∫π\s]+)/)?.[0] || mathProblem;
-                        const context = mathProblem.replace(mathExpr, '').trim();
+                console.log(`📊 Target question counts: 1-mark=${targetCounts[1]}, 2-mark=${targetCounts[2]}, 3-mark=${targetCounts[3]}, 10-mark=${targetCounts[10]} (Total: ${targetCounts[1] + targetCounts[2] + targetCounts[3] + targetCounts[10]})`);
+                
+                // Track paragraph usage count (allow reuse for long paragraphs)
+                const paragraphUsage = new Map();
+                
+                // Generate questions for each mark category
+                [1, 2, 3, 10].forEach(marks => {
+                    let generated = 0;
+                    const targetCount = targetCounts[marks];
+                    
+                    console.log(`Generating ${targetCount} questions for ${marks}-mark category...`);
+                    
+                    // Try each paragraph until we have enough questions
+                    // Allow reusing paragraphs if they're long enough - be more aggressive
+                    for (let i = 0; i < paragraphs.length && generated < targetCount; i++) {
+                    const para = paragraphs[i].trim();
+                        const minLength = marks === 1 ? 40 : marks === 2 ? 80 : marks === 3 ? 120 : 150; // Lowered minimums
                         
+                        // Check usage - allow more reuse for longer paragraphs
+                        const usageCount = paragraphUsage.get(i) || 0;
+                        // More aggressive reuse: allow 3-4 uses for very long paragraphs
+                        const maxReuse = para.length > 800 ? 4 : para.length > 500 ? 3 : para.length > 300 ? 2 : para.length > 150 ? 1 : 0;
+                        
+                        if (para.length >= minLength && usageCount < maxReuse) {
+                            const qa = createQuestionFromContent(para, marks);
+                            
+                            if (qa && 
+                                qa.question && 
+                                qa.answer &&
+                                qa.question.trim() !== qa.answer.trim() &&
+                                qa.question.length > 8 && // Lowered minimum
+                                qa.answer.length > qa.question.length * 1.2 && // Less strict ratio
+                                !questions.some(q => q.question.toLowerCase() === qa.question.toLowerCase())) {
+                            
+                            questions.push({
+                                id: questionId++,
+                                    question: qa.question,
+                                    answer: qa.answer,
+                                    marks: marks,
+                                    examDate: examDate
+                                });
+                                
+                                paragraphUsage.set(i, usageCount + 1);
+                                generated++;
+                                console.log(`✅ Generated ${marks}-mark question ${generated}/${targetCount}: "${qa.question.substring(0, 50)}..."`);
+                            }
+                        }
+                    }
+                    
+                    // If still not enough, try cycling through paragraphs multiple times
+                    if (generated < targetCount) {
+                        console.log(`⚠️ Only ${generated}/${targetCount} generated. Cycling through paragraphs again...`);
+                        let attempts = 0;
+                        const maxAttempts = paragraphs.length * 2; // Try twice through all paragraphs
+                        
+                        while (generated < targetCount && attempts < maxAttempts) {
+                            for (let i = 0; i < paragraphs.length && generated < targetCount; i++) {
+                                const para = paragraphs[i].trim();
+                                const minLength = marks === 1 ? 30 : marks === 2 ? 60 : marks === 3 ? 100 : 120; // Even lower
+                                
+                                const usageCount = paragraphUsage.get(i) || 0;
+                                const maxReuse = para.length > 400 ? 5 : para.length > 200 ? 3 : 2; // More aggressive
+                                
+                                if (para.length >= minLength && usageCount < maxReuse) {
+                                    const qa = createQuestionFromContent(para, marks);
+                                    
+                                    if (qa && 
+                                        qa.question && 
+                                        qa.answer &&
+                                        qa.question.trim() !== qa.answer.trim() &&
+                                        qa.question.length > 8 &&
+                                        qa.answer.length > qa.question.length * 1.1 &&
+                                        !questions.some(q => q.question.toLowerCase() === qa.question.toLowerCase())) {
+                                        
                         questions.push({
                             id: questionId++,
-                            question: context ? `${context}\n\nSolve: ${mathExpr}` : `Solve: ${mathExpr}`,
-                            answer: mathProblem, // Include the full problem with solution if available
-                            marks: 1,
-                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        });
-                        mathIndex++;
-                    }
-                }
-                
-                // Generate regular 1-mark questions from paragraphs
-                for (let i = 0; i < oneMarkCount - mathIndex && i < paragraphs.length; i++) {
-                    const para = paragraphs[i].trim();
-                    if (para.length > 50) {
-                        // Preserve mathematical content in the paragraph
-                        const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
-                        if (sentences.length > 0) {
-                            const firstSentence = sentences[0].trim();
-                            // Check if it contains math
-                            const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(firstSentence);
-                            const keyTerm = hasMath ? firstSentence.substring(0, 100) : firstSentence.split(' ').slice(0, 5).join(' ');
-                            const answer = para.substring(0, Math.min(200, para.length));
-                            
-                            questions.push({
-                                id: questionId++,
-                                question: hasMath ? firstSentence : `What is ${keyTerm}?`,
-                                answer: answer,
-                                marks: 1,
-                                examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            });
+                                            question: qa.question,
+                                            answer: qa.answer,
+                                            marks: marks,
+                                            examDate: examDate
+                                        });
+                                        
+                                        paragraphUsage.set(i, usageCount + 1);
+                                        generated++;
+                                        attempts++;
+                                    }
+                                }
+                                attempts++;
+                            }
                         }
                     }
-                }
-                
-                // Generate 2-mark questions (explanations, mathematical problems with steps)
-                const twoMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 3)));
-                let mathUsed = 0;
-                
-                // Add mathematical problems with steps as 2-mark questions
-                for (let i = Math.min(2, mathPatterns.length); i < Math.min(4, mathPatterns.length) && mathUsed < Math.floor(twoMarkCount / 2); i++) {
-                    const mathProblem = mathPatterns[i].trim();
-                    if (mathProblem.length > 20 && mathProblem.length < 300) {
-                        questions.push({
-                            id: questionId++,
-                            question: `Solve the following with steps:\n${mathProblem}`,
-                            answer: mathProblem, // Include solution steps if available
-                            marks: 2,
-                            examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        });
-                        mathUsed++;
-                    }
-                }
-                
-                // Generate regular 2-mark questions
-                for (let i = oneMarkCount; i < oneMarkCount + twoMarkCount - mathUsed && i < paragraphs.length; i++) {
-                    const para = paragraphs[i].trim();
-                    if (para.length > 100) {
-                        const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
-                        if (sentences.length >= 2) {
-                            const questionText = sentences[0].trim();
-                            const answer = sentences.slice(0, Math.min(3, sentences.length)).join(' ').substring(0, 250);
-                            
-                            questions.push({
-                                id: questionId++,
-                                question: questionText.length > 100 ? questionText.substring(0, 100) + '...' : questionText,
-                                answer: answer,
-                                marks: 2,
-                                examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            });
-                        }
-                    }
-                }
-                
-                // Generate 3-mark questions (detailed explanations, complex mathematical problems)
-                const threeMarkCount = Math.min(3, Math.max(2, Math.floor(paragraphs.length / 2)));
-                
-                for (let i = oneMarkCount + twoMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount && i < paragraphs.length; i++) {
-                    const para = paragraphs[i].trim();
-                    if (para.length > 150) {
-                        const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
-                        const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(para);
+                    
+                    // If still not enough, try splitting longer paragraphs into smaller chunks
+                    if (generated < targetCount) {
+                        console.log(`⚠️ Still need ${targetCount - generated} more ${marks}-mark questions. Splitting long paragraphs...`);
                         
-                        if (sentences.length >= 2) {
-                            const questionText = hasMath 
-                                ? sentences[0].trim() 
-                                : `Describe ${sentences[0].trim().split(' ').slice(0, 5).join(' ')} in detail.`;
-                            const answer = sentences.slice(0, Math.min(4, sentences.length)).join(' ').substring(0, 350);
-                            
-                            questions.push({
-                                id: questionId++,
-                                question: questionText.length > 150 ? questionText.substring(0, 150) + '...' : questionText,
-                                answer: answer,
-                                marks: 3,
-                                examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            });
-                        }
-                    }
-                }
-                
-                // Generate 10-mark questions (comprehensive answers, complex mathematical derivations)
-                const tenMarkCount = Math.min(2, Math.max(1, Math.floor(paragraphs.length / 1.5)));
-                
-                for (let i = oneMarkCount + twoMarkCount + threeMarkCount; i < oneMarkCount + twoMarkCount + threeMarkCount + tenMarkCount && i < paragraphs.length; i++) {
+                        // Try splitting longer paragraphs into smaller chunks
+                        for (let i = 0; i < paragraphs.length && generated < targetCount; i++) {
                     const para = paragraphs[i].trim();
-                    if (para.length > 200) {
-                        const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 10);
-                        const hasMath = /[0-9+\-*/=()^√∑∫π]/.test(para);
-                        
-                        if (sentences.length >= 3) {
-                            const firstSentence = sentences[0].trim();
-                            const questionText = hasMath 
-                                ? firstSentence.substring(0, 200)
-                                : `Write a comprehensive answer about ${firstSentence.split(' ').slice(0, 6).join(' ')}.`;
-                            const answer = sentences.slice(0, Math.min(10, sentences.length)).join(' ').substring(0, 600);
+                            
+                            // If paragraph is long enough, split it and generate multiple questions
+                            if (para.length > 300) {
+                                // Split by sentences
+                                const sentences = para.split(/[.!?]+/).filter(s => s.trim().length > 30);
+                                
+                                // Create overlapping chunks to generate more questions
+                                for (let startIdx = 0; startIdx < sentences.length - 1 && generated < targetCount; startIdx++) {
+                                    // Take 2-4 sentences per chunk
+                                    const chunkSize = marks === 1 ? 2 : marks === 2 ? 3 : marks === 3 ? 4 : 5;
+                                    const chunk = sentences.slice(startIdx, startIdx + chunkSize).join('. ').trim();
+                                    
+                                    if (chunk.length >= (marks === 1 ? 40 : marks === 2 ? 80 : marks === 3 ? 120 : 150)) {
+                                        const qa = createQuestionFromContent(chunk, marks);
+                                        
+                                        if (qa && 
+                                            qa.question && 
+                                            qa.answer &&
+                                            qa.question.trim() !== qa.answer.trim() &&
+                                            qa.question.length > 8 &&
+                                            qa.answer.length > qa.question.length * 1.1 &&
+                                            !questions.some(q => q.question.toLowerCase() === qa.question.toLowerCase())) {
                             
                             questions.push({
                                 id: questionId++,
-                                question: questionText,
-                                answer: answer,
-                                marks: 10,
-                                examDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            });
+                                                question: qa.question,
+                                                answer: qa.answer,
+                                                marks: marks,
+                                                examDate: examDate
+                                            });
+                                            
+                                            generated++;
+                                            console.log(`✅ Generated additional ${marks}-mark question from split: "${qa.question.substring(0, 50)}..."`);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
+                    
+                    console.log(`📊 Final count for ${marks}-mark: ${generated}/${targetCount} questions`);
+                });
+                
+                // Final validation and cleanup - keep all valid questions (be less strict to keep more)
+                const validQuestions = [];
+                const seenQuestions = new Set();
+                
+                questions.forEach(q => {
+                    const qNorm = q.question.toLowerCase().trim();
+                    const aNorm = q.answer.toLowerCase().trim();
+                    
+                    // Less strict validation - ensure questions and answers are different but allow more through
+                    if (q.question && 
+                        q.answer &&
+                        q.question.trim().length > 8 && // Lowered from 10
+                        q.answer.trim().length > 25 && // Lowered from 30
+                        qNorm !== aNorm &&
+                        q.answer.length > q.question.length * 1.1 && // Less strict ratio (was 1.2)
+                        !seenQuestions.has(qNorm)) {
+                        
+                        validQuestions.push(q);
+                        seenQuestions.add(qNorm);
+                    }
+                });
+                
+                console.log(`📋 After validation: ${validQuestions.length} valid questions (from ${questions.length} generated)`);
+                
+                const countsByMark = {
+                    1: validQuestions.filter(q => q.marks === 1).length,
+                    2: validQuestions.filter(q => q.marks === 2).length,
+                    3: validQuestions.filter(q => q.marks === 3).length,
+                    10: validQuestions.filter(q => q.marks === 10).length
+                };
+                
+                console.log(`✅ Generated ${validQuestions.length} valid questions total:`);
+                console.log(`   - ${countsByMark[1]} x 1-mark questions`);
+                console.log(`   - ${countsByMark[2]} x 2-mark questions`);
+                console.log(`   - ${countsByMark[3]} x 3-mark questions`);
+                console.log(`   - ${countsByMark[10]} x 10-mark questions`);
+                
+                // If we have less than 20 questions, try to generate more from remaining content
+                if (validQuestions.length < 20) {
+                    console.log(`⚠️ Only ${validQuestions.length} questions generated. Target is 20+. Trying to generate more...`);
+                    
+                    // Try to generate more questions from unused or partially used paragraphs
+                    const remainingParagraphs = paragraphs.filter((p, idx) => {
+                        const usage = paragraphUsage.get(idx) || 0;
+                        return usage === 0 || (p.length > 400 && usage < 2);
+                    });
+                    
+                    // Generate additional questions from remaining content
+                    [1, 2, 3, 10].forEach(marks => {
+                        const currentCount = countsByMark[marks];
+                        const targetCount = targetCounts[marks];
+                        
+                        if (currentCount < targetCount) {
+                            const needed = targetCount - currentCount;
+                            let generated = 0;
+                            
+                            for (let para of remainingParagraphs) {
+                                if (generated >= needed) break;
+                                
+                                const qa = createQuestionFromContent(para, marks);
+                                if (qa && 
+                                    qa.question && 
+                                    qa.answer &&
+                                    qa.question.trim() !== qa.answer.trim() &&
+                                    !validQuestions.some(q => q.question.toLowerCase() === qa.question.toLowerCase())) {
+                                    
+                                    validQuestions.push({
+                                id: questionId++,
+                                        question: qa.question,
+                                        answer: qa.answer,
+                                        marks: marks,
+                                        examDate: examDate
+                                    });
+                                    generated++;
+                                }
+                            }
+                        }
+                    });
+                    
+                    console.log(`✅ After additional generation: ${validQuestions.length} total questions`);
                 }
                 
-                console.log(`Generated ${questions.length} questions total`);
-                
-                // If not enough questions generated, add some from mock data
-                if (questions.length < 4) {
-                    const mockQuestionsToAdd = mockQuestions.slice(0, 4 - questions.length);
+                // Final check - if still not enough, add from mock data (but only as last resort)
+                if (validQuestions.length < 4) {
+                    console.warn('⚠️ Not enough questions generated, adding mock questions as fallback');
+                    const mockQuestionsToAdd = mockQuestions.slice(0, Math.min(4 - validQuestions.length, 4));
                     mockQuestionsToAdd.forEach(q => {
-                        questions.push({
+                        if (q.question && q.answer && q.question !== q.answer) {
+                            validQuestions.push({
                             ...q,
-                            id: questionId++
-                        });
+                                id: questionId++,
+                                examDate: examDate
+                            });
+                        }
                     });
                 }
                 
-                return questions;
+                // Sort questions by marks for better organization
+                validQuestions.sort((a, b) => {
+                    if (a.marks !== b.marks) return a.marks - b.marks;
+                    return a.id - b.id;
+                });
+                
+                console.log(`🎉 Final result: ${validQuestions.length} questions ready for use!`);
+                
+                return validQuestions;
             }
 
             // Generate questions button handler
@@ -460,33 +753,39 @@
                 try {
                     // Step 1: Reading PDF - ALL PAGES
                     loaderTitle.textContent = 'Reading PDF Document...';
-                    loaderMessage.textContent = 'Reading all pages and extracting complete content including mathematical formulas';
+                    loaderMessage.textContent = 'Reading ALL pages completely and extracting full content...';
+                    progressBar.style.width = '20%';
+                    progressText.textContent = '20% - Reading all PDF pages...';
                     
-                    // Extract text from PDF - this now reads ALL pages
+                    // Extract text from PDF - this now reads ALL pages completely
                     const pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
                     
                     // Update progress after reading all pages
                     progressBar.style.width = '30%';
-                    progressText.textContent = '30% - All pages read successfully';
+                    progressText.textContent = `30% - All pages read successfully (${pdfText.length.toLocaleString()} characters)`;
                     
-                    console.log('PDF Text Extracted from all pages:', pdfText.substring(0, 500) + '...');
-                    console.log('Total PDF content length:', pdfText.length, 'characters');
+                    console.log('📄 PDF Text Extracted from all pages:', pdfText.substring(0, 500) + '...');
+                    console.log('📊 Total PDF content length:', pdfText.length.toLocaleString(), 'characters');
                     
                     // Step 2: Analyzing Content
                     loaderTitle.textContent = 'Analyzing Content...';
-                    loaderMessage.textContent = 'Identifying key concepts, topics, and mathematical problems';
-                    progressBar.style.width = '50%';
-                    progressText.textContent = '50% - Analyzing content and mathematical expressions...';
+                    loaderMessage.textContent = 'Identifying key concepts, topics, and extracting meaningful sections...';
+                    progressBar.style.width = '40%';
+                    progressText.textContent = '40% - Analyzing content structure...';
                     
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
-                    // Step 3: Generating Questions (including mathematical problems)
+                    // Step 3: Generating Questions (20+ questions)
                     loaderTitle.textContent = 'Generating Questions...';
-                    loaderMessage.textContent = 'Creating questions organized by marks (1, 2, 3, 10) including mathematical sums and formulas';
-                    progressBar.style.width = '70%';
-                    progressText.textContent = '70% - Generating questions and mathematical problems...';
+                    loaderMessage.textContent = 'Creating 20+ questions organized by marks (1, 2, 3, 10 marks) from all PDF content...';
+                    progressBar.style.width = '60%';
+                    progressText.textContent = '60% - Generating questions from PDF content...';
                     
                     const pdfQuestions = generateQuestionsFromPDF(pdfText);
+                    
+                    // Update progress
+                    progressBar.style.width = '80%';
+                    progressText.textContent = `80% - Generated ${pdfQuestions.length} questions successfully`;
                     
                     // Step 4: Organizing by Marks
                     loaderTitle.textContent = 'Organizing by Marks...';
@@ -582,5 +881,4 @@
         });
     </script>
 </body>
-
 </html>

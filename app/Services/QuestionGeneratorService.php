@@ -110,34 +110,42 @@ Analyze the following PDF content and generate exam questions with answers. The 
 PDF Content:
 {$pdfContent}
 
-Instructions:
-1. Analyze the content depth and complexity
-2. Generate an appropriate mix of questions:
+CRITICAL INSTRUCTIONS:
+1. Questions and answers MUST be completely different - never use the same text for both question and answer
+2. Questions should be exam-style questions (e.g., "What is...?", "Explain...", "Describe...", "Compare...")
+3. DO NOT use prefixes like "Explain and solve the following problem:", "Solve the following:", "What is the solution to:" - just write the question directly
+4. Answers should be detailed explanations that answer the question, not just repeat the question text
+4. Generate an appropriate mix of questions:
    - 1-mark questions: Simple recall, definitions, basic facts (generate 3-5 questions)
+     Example: Question: "What is photosynthesis?" Answer: "Photosynthesis is the process by which plants convert light energy into chemical energy..."
    - 2-mark questions: Short explanations, brief comparisons (generate 3-5 questions)
+     Example: Question: "Explain the difference between mitosis and meiosis." Answer: "Mitosis produces two identical daughter cells for growth and repair, while meiosis produces four genetically different gametes for reproduction..."
    - 3-mark questions: Detailed explanations, step-by-step processes (generate 2-4 questions)
+     Example: Question: "Describe the process of protein synthesis in detail." Answer: "Protein synthesis involves transcription where DNA is copied to mRNA in the nucleus, followed by translation where mRNA is read by ribosomes to assemble amino acids into proteins..."
    - 10-mark questions: Comprehensive answers, essays, detailed analysis (generate 1-2 questions)
-3. Each question must have a detailed answer appropriate for its mark value
-4. Questions should cover different topics/concepts from the PDF
-5. Answers should be accurate, comprehensive, and educational
+     Example: Question: "Discuss the causes and consequences of climate change." Answer: "Climate change is caused by greenhouse gas emissions from human activities such as burning fossil fuels, deforestation, and industrial processes. The consequences include rising global temperatures, melting ice caps, sea level rise, extreme weather events, and impacts on biodiversity..."
+5. Each question must have a detailed answer appropriate for its mark value
+6. Questions should cover different topics/concepts from the PDF
+7. Answers should be accurate, comprehensive, and educational
+8. DO NOT use passage text directly as questions - convert passages into proper exam questions
 
 Respond ONLY with valid JSON in this exact format:
 {
   "questions": [
     {
-      "question_text": "Question text here",
-      "answer_text": "Detailed answer here",
+      "question_text": "Question text here (must be different from answer)",
+      "answer_text": "Detailed answer here (must be different from question)",
       "marks": 1
     },
     {
-      "question_text": "Question text here",
-      "answer_text": "Detailed answer here",
+      "question_text": "Question text here (must be different from answer)",
+      "answer_text": "Detailed answer here (must be different from question)",
       "marks": 2
     }
   ]
 }
 
-Important: Return ONLY the JSON object, no markdown formatting, no explanations, no code blocks.
+Important: Return ONLY the JSON object, no markdown formatting, no explanations, no code blocks. Ensure every question_text is different from its corresponding answer_text.
 PROMPT;
     }
 
@@ -183,6 +191,26 @@ PROMPT;
                 continue; // Skip invalid questions
             }
 
+            $questionText = trim($question['question_text']);
+            $answerText = trim($question['answer_text']);
+            
+            // Skip if question or answer is empty
+            if (empty($questionText) || empty($answerText)) {
+                continue;
+            }
+            
+            // Skip if question and answer are the same or too similar
+            if ($questionText === $answerText || 
+                strtolower($questionText) === strtolower($answerText) ||
+                strlen($questionText) === strlen($answerText) && similar_text($questionText, $answerText) > 90) {
+                continue; // Skip questions where question and answer are identical
+            }
+            
+            // Ensure answer is longer than question (answers should contain more detail)
+            if (strlen($answerText) <= strlen($questionText)) {
+                continue; // Skip if answer is not longer than question
+            }
+
             $marks = isset($question['marks']) ? (int)$question['marks'] : 1;
             
             // Ensure marks are valid
@@ -191,8 +219,8 @@ PROMPT;
             }
 
             $validated[] = [
-                'question_text' => trim($question['question_text']),
-                'answer_text' => trim($question['answer_text']),
+                'question_text' => $questionText,
+                'answer_text' => $answerText,
                 'marks' => $marks,
             ];
         }
