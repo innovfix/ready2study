@@ -5,6 +5,13 @@ const API_BASE_URL = 'api';
 // Fallback: try standalone endpoint if Laravel routes fail
 const API_FALLBACK_URL = '';
 
+function joinApiUrl(baseUrl, endpoint) {
+    if (!baseUrl) return endpoint;
+    const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const ep = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${base}${ep}`;
+}
+
 // Helper function to get CSRF token
 function getCSRFToken() {
     const token = document.querySelector('meta[name="csrf-token"]');
@@ -13,7 +20,7 @@ function getCSRFToken() {
 
 // Helper function for API calls
 async function apiCall(endpoint, options = {}) {
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = joinApiUrl(API_BASE_URL, endpoint);
     const csrfToken = getCSRFToken();
     const defaultOptions = {
         headers: {
@@ -43,8 +50,19 @@ async function apiCall(endpoint, options = {}) {
         delete finalOptions.headers['Content-Type'];
     }
 
+    // Optional timeout support (prevents "stuck forever" spinners)
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 60000;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timeoutId = null;
+
     try {
+        if (controller && timeoutMs > 0) {
+            finalOptions.signal = controller.signal;
+            timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        }
+
         const response = await fetch(url, finalOptions);
+        if (timeoutId) clearTimeout(timeoutId);
         
         // Get response text first to check if it's JSON
         const responseText = await response.text();
@@ -89,8 +107,14 @@ async function apiCall(endpoint, options = {}) {
 
         return data;
     } catch (error) {
+        if (error && (error.name === 'AbortError' || `${error}`.includes('AbortError'))) {
+            console.error('API timeout:', url);
+            throw new Error('Request timed out. Please ensure Apache and MySQL are running in XAMPP, then try again.');
+        }
         console.error('API Error:', error);
         throw error;
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
     }
 }
 
@@ -220,7 +244,15 @@ const PDFAPI = {
         const formData = new FormData();
         formData.append('file', file);
         if (contentText) {
-            formData.append('content_text', contentText);
+            // Guardrail: sending the entire extracted text can be huge and may stall uploads on some setups.
+            // We store a truncated version for DB indexing while still generating questions client-side.
+            const MAX_CONTENT_TEXT_CHARS = 500000; // ~0.5MB-ish
+            const safeText = contentText.length > MAX_CONTENT_TEXT_CHARS
+                ? contentText.slice(0, MAX_CONTENT_TEXT_CHARS)
+                : contentText;
+            formData.append('content_text', safeText);
+            formData.append('content_text_truncated', contentText.length > MAX_CONTENT_TEXT_CHARS ? '1' : '0');
+            formData.append('content_text_length', String(contentText.length));
         }
         
         // Add user ID if available in localStorage
@@ -237,10 +269,12 @@ const PDFAPI = {
             }
         }
 
-        console.log('→ Uploading to /pdfs/upload...');
-        const result = await apiCall('/pdfs/upload', {
+        console.log('→ Uploading to /pdfs/upload.php...');
+        const result = await apiCall('/pdfs/upload.php', {
             method: 'POST',
             body: formData,
+            // If the backend/MySQL isn't running, this prevents the UI from hanging forever.
+            timeoutMs: 20000,
         });
         console.log('✓ PDF uploaded successfully:', result);
         return result;
@@ -277,7 +311,7 @@ const PDFAPI = {
 // Question API
 const QuestionAPI = {
     getByPDF: async (pdfId) => {
-        return await apiCall(`/questions?pdf_id=${pdfId}`);
+        return await apiCall(`/questions.php?pdf_id=${pdfId}`);
     },
 
     createBulk: async (pdfId, questions) => {
@@ -286,12 +320,13 @@ const QuestionAPI = {
         console.log('  Questions count:', questions.length);
         console.log('  Questions:', questions);
         
-        const result = await apiCall('/questions', {
+        const result = await apiCall('/questions.php', {
             method: 'POST',
             body: JSON.stringify({
                 pdf_id: pdfId,
                 questions: questions,
             }),
+            timeoutMs: 20000,
         });
         
         console.log('✓ Questions saved successfully:', result);

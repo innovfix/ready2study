@@ -17,3 +17,9 @@ npm-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# Environment / secrets
+.env
+
+# User uploads
+uploads/

@@ -943,6 +943,10 @@
                 const progressBar = document.getElementById('progressBar');
                 const progressText = document.getElementById('progressText');
                 
+                // Keep these in outer scope so the catch block can offer an offline fallback
+                let pdfText = '';
+                let pdfQuestions = [];
+
                 try {
                     // Step 1: Reading PDF - ALL PAGES
                     loaderTitle.textContent = 'Reading PDF Document...';
@@ -951,7 +955,7 @@
                     progressText.textContent = '20% - Reading all PDF pages...';
                     
                     // Extract text from PDF - this now reads ALL pages completely
-                    const pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
+                    pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
                     
                     // Update progress after reading all pages
                     progressBar.style.width = '30%';
@@ -974,7 +978,7 @@
                     progressBar.style.width = '60%';
                     progressText.textContent = '60% - Generating questions from PDF content...';
                     
-                    const pdfQuestions = generateQuestionsFromPDF(pdfText);
+                    pdfQuestions = generateQuestionsFromPDF(pdfText);
                     
                     // Update progress
                     progressBar.style.width = '80%';
@@ -1060,7 +1064,30 @@
                     loader.style.display = 'none';
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Questions';
-                    alert('Error processing PDF. Please try again or use a different PDF file. Error: ' + error.message);
+
+                    const msg = (error && error.message) ? error.message : String(error);
+                    const looksLikeDbIssue = /database unavailable|cannot reach mysql|mysql|database connection|timed out/i.test(msg);
+
+                    // Offer offline mode if the backend is down/unreachable
+                    if (looksLikeDbIssue && Array.isArray(pdfQuestions) && pdfQuestions.length > 0 && pdfText && window.currentPDFFile) {
+                        const proceedOffline = confirm(
+                            'The server database is not available (MySQL may not be running).\n\n' +
+                            'Do you want to continue in OFFLINE mode (save questions locally and open the dashboard)?'
+                        );
+
+                        if (proceedOffline) {
+                            localStorage.setItem('ready2study_pdf_questions', JSON.stringify(pdfQuestions));
+                            localStorage.setItem('ready2study_pdf_content', pdfText);
+                            localStorage.setItem('ready2study_pdf_uploaded', 'true');
+                            localStorage.setItem('ready2study_pdf_name', window.currentPDFFile.name);
+                            localStorage.removeItem('ready2study_current_pdf_id');
+
+                            window.location.href = 'dashboard.html';
+                            return;
+                        }
+                    }
+
+                    alert('Error processing PDF. Please try again or use a different PDF file. Error: ' + msg);
                 }
             });
 

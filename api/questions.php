@@ -36,6 +36,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+/**
+ * Fast MySQL reachability check to avoid long hangs when MySQL isn't running.
+ * (PDO timeouts can be unreliable on some Windows/XAMPP setups.)
+ */
+function assertMySqlReachable(string $host, int $port): void {
+    $errno = 0;
+    $errstr = '';
+    $timeoutSec = 2.0;
+    $socket = @stream_socket_client(
+        "tcp://{$host}:{$port}",
+        $errno,
+        $errstr,
+        $timeoutSec,
+        STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT
+    );
+    $connected = false;
+    if ($socket) {
+        stream_set_blocking($socket, false);
+        $read = [];
+        $write = [$socket];
+        $except = [$socket];
+        $sec = (int)$timeoutSec;
+        $usec = (int)(($timeoutSec - $sec) * 1000000);
+        $selected = @stream_select($read, $write, $except, $sec, $usec);
+        $connected = ($selected && count($write) > 0);
+    }
+
+    if (!$socket || !$connected) {
+        http_response_code(503);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'error' => 'Database unavailable',
+            'message' => "Cannot reach MySQL at {$host}:{$port}. Please start MySQL in the XAMPP Control Panel.",
+            'details' => $errstr ? "{$errstr} ({$errno})" : 'Connection attempt timed out'
+        ]);
+        exit;
+    }
+    fclose($socket);
+}
+
 // Handle GET requests for fetching questions
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
@@ -54,14 +94,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // Connect to database
         $dbConfig = [
             'host' => '127.0.0.1',
+            'port' => 3306,
             'database' => 'ready2study',
             'username' => 'root',
             'password' => '',
         ];
 
         try {
+            assertMySqlReachable($dbConfig['host'], $dbConfig['port']);
             $pdo = new PDO(
-                "mysql:host={$dbConfig['host']};dbname={$dbConfig['database']};charset=utf8mb4",
+                "mysql:host={$dbConfig['host']};port={$dbConfig['port']};dbname={$dbConfig['database']};charset=utf8mb4",
                 $dbConfig['username'],
                 $dbConfig['password'],
                 [
@@ -161,14 +203,16 @@ try {
     // Connect to database
     $dbConfig = [
         'host' => '127.0.0.1',
+        'port' => 3306,
         'database' => 'ready2study',
         'username' => 'root',
         'password' => '',
     ];
 
     try {
+        assertMySqlReachable($dbConfig['host'], $dbConfig['port']);
         $pdo = new PDO(
-            "mysql:host={$dbConfig['host']};dbname={$dbConfig['database']};charset=utf8mb4",
+            "mysql:host={$dbConfig['host']};port={$dbConfig['port']};dbname={$dbConfig['database']};charset=utf8mb4",
             $dbConfig['username'],
             $dbConfig['password'],
             [

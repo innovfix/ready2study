@@ -12,6 +12,45 @@ $result = [
     'tests' => []
 ];
 
+// Fast reachability check to avoid long hangs when MySQL isn't running
+$mysqlHost = '127.0.0.1';
+$mysqlPort = 3306;
+$errno = 0;
+$errstr = '';
+$timeoutSec = 2.0;
+$socket = @stream_socket_client(
+    "tcp://{$mysqlHost}:{$mysqlPort}",
+    $errno,
+    $errstr,
+    $timeoutSec,
+    STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT
+);
+$connected = false;
+if ($socket) {
+    stream_set_blocking($socket, false);
+    $read = [];
+    $write = [$socket];
+    $except = [$socket];
+    $sec = (int)$timeoutSec;
+    $usec = (int)(($timeoutSec - $sec) * 1000000);
+    $selected = @stream_select($read, $write, $except, $sec, $usec);
+    $connected = ($selected && count($write) > 0);
+}
+
+if (!$socket || !$connected) {
+    $result['tests']['mysql_reachable'] = [
+        'name' => 'MySQL Reachable',
+        'status' => 'failed',
+        'message' => "Cannot reach MySQL at {$mysqlHost}:{$mysqlPort}. Please start MySQL in the XAMPP Control Panel.",
+        'details' => $errstr ? "{$errstr} ({$errno})" : 'Connection attempt timed out'
+    ];
+    $result['overall_status'] = 'needs_attention';
+    $result['summary'] = 'MySQL is not reachable. Start MySQL in XAMPP and try again.';
+    echo json_encode($result, JSON_PRETTY_PRINT);
+    exit;
+}
+fclose($socket);
+
 // Test 1: Can we connect to MySQL?
 $result['tests']['mysql_connection'] = [
     'name' => 'MySQL Connection',
@@ -20,7 +59,7 @@ $result['tests']['mysql_connection'] = [
 
 try {
     $pdo = new PDO(
-        "mysql:host=127.0.0.1;charset=utf8mb4",
+        "mysql:host={$mysqlHost};port={$mysqlPort};charset=utf8mb4",
         'root',
         '',
         [
@@ -76,11 +115,12 @@ $result['tests']['database_connection'] = [
 
 try {
     $pdo = new PDO(
-        "mysql:host=127.0.0.1;dbname=ready2study;charset=utf8mb4",
+        "mysql:host={$mysqlHost};port={$mysqlPort};dbname=ready2study;charset=utf8mb4",
         'root',
         '',
         [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 3
         ]
     );
     $result['tests']['database_connection']['status'] = 'success';
