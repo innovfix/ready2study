@@ -2150,6 +2150,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Get question number in the list
             const questionNumber = index + 1;
+
+            // Optional: Show which PDF a question came from (multi-PDF upload flow)
+            const pdfNameBadge = q.pdfName ? `
+                <span style="background: rgba(30, 64, 175, 0.10); color: var(--primary); padding: 0.35rem 0.75rem; border-radius: 999px; font-weight: 700; font-size: 0.75rem; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    📄 ${escapeHtml(q.pdfName)}
+                </span>
+            ` : '';
             
             card.innerHTML = `
                 <!-- Question and Answer Display with Mark Badge -->
@@ -2162,6 +2169,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="color: #64748b; font-size: 0.875rem; font-weight: 600;">
                             Q${questionNumber}
                         </span>
+                        ${pdfNameBadge}
                     </div>
                     
                     <!-- Question Box with Blue Border - Displayed FIRST -->
@@ -3089,7 +3097,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Chat Functionality
     let currentChatQuestionId = null;
-    let chatHistory = [];
     const chatButton = document.getElementById('chatButton');
     const chatModal = document.getElementById('chatModal');
     const chatClose = document.getElementById('chatClose');
@@ -3102,7 +3109,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Open chat for specific question
     function openChatForQuestion(questionId) {
         currentChatQuestionId = questionId;
-        chatHistory = [];
         const question = allQuestions.find(q => q.id === questionId);
         
         if (question) {
@@ -3126,7 +3132,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Open general chat
     function openGeneralChat() {
         currentChatQuestionId = null;
-        chatHistory = [];
         chatHeaderTitle.textContent = 'Chat About Questions';
         chatWelcomeMessage.textContent = 'Hello! I\'m here to help you with questions. Ask me anything!';
         
@@ -3168,26 +3173,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Backend chat endpoint (server-side OpenAI proxy)
-    // This avoids browser CORS issues and keeps the API key on the server.
-    const CHAT_API_ENDPOINT = 'api/chat.php';
-
-    function localFallbackForGeneralChat(userMessage) {
-        const m = (userMessage || '').toLowerCase();
-        // Very small offline fallback for common basics (when AI isn't configured)
-        if (m.includes('input')) {
-            return (
-                "**Input (உள்ளீடு) என்றால் என்ன?**\n\n" +
-                "Input என்பது ஒரு computer/program-க்கு நாம் கொடுக்கும் data அல்லது instructions.\n\n" +
-                "**Examples:**\n" +
-                "- Keyboard-ல type பண்ணுற text\n" +
-                "- Mouse click\n" +
-                "- Form-ல enter பண்ணுற name/marks\n\n" +
-                "இதுக்கு எதிர் தான் **Output (வெளியீடு)** — program process பண்ணி தரும் result."
-            );
-        }
-        return null;
-    }
+    // ChatGPT API Configuration
+    // Note: For production, store API key securely on backend
+    // For now, user can set it in localStorage: localStorage.setItem('chatgpt_api_key', 'your-api-key')
+    const CHATGPT_API_KEY = localStorage.getItem('chatgpt_api_key') || '';
+    const CHATGPT_API_URL = 'https://api.openai.com/v1/chat/completions';
 
     // Send message function with ChatGPT integration
     async function sendMessage() {
@@ -3195,7 +3185,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return;
 
         addMessage(message, 'user');
-        chatHistory.push({ role: 'user', content: message });
         chatInput.value = '';
 
         // Disable input while processing
@@ -3216,41 +3205,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
-
-            const response = await fetch(CHAT_API_ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message,
-                    question: question ? question.question : '',
-                    answer: question ? question.answer : '',
-                    marks: question ? question.marks : 0,
-                    history: chatHistory.slice(-10),
-                })
-            });
-
-            const responseText = await response.text();
-            let data = null;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                throw new Error('Server returned an invalid response.');
+            
+            // Build context for ChatGPT
+            let systemPrompt = 'You are a helpful study assistant helping students understand exam questions. Provide clear, detailed explanations in a friendly and encouraging manner.';
+            let userPrompt = message;
+            
+            if (question) {
+                systemPrompt = `You are a helpful study assistant. A student is asking about this ${question.marks}-mark question: "${question.question}". The correct answer is: "${question.answer}". Help them understand the question and answer clearly. Provide explanations in simple terms, give examples if helpful, and encourage their learning.`;
+                userPrompt = `Question: ${question.question}\n\nAnswer: ${question.answer}\n\nStudent's question: ${message}`;
             }
 
-            if (!response.ok) {
-                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `Request failed (${response.status})`;
-                throw new Error(msg);
+            // Call ChatGPT API
+            if (CHATGPT_API_KEY) {
+                const response = await fetch(CHATGPT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${CHATGPT_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-3.5-turbo',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const botResponse = data.choices[0].message.content;
+                
+                // Remove typing indicator
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+                
+                addMessage(botResponse, 'bot');
+                } else {
+                // Fallback: Use local responses if no API key
+                throw new Error('No API key configured');
             }
-
-            const botResponse = (data && (data.reply || data.message)) ? (data.reply || data.message) : '';
-            if (!botResponse) throw new Error('Empty AI response');
-
-            // Remove typing indicator
-            const indicator = document.getElementById('typing-indicator');
-            if (indicator) indicator.remove();
-
-            chatHistory.push({ role: 'assistant', content: botResponse });
-            addMessage(botResponse, 'bot');
         } catch (error) {
             console.error('ChatGPT API Error:', error);
             
@@ -3263,13 +3262,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
             
             if (question) {
-                botResponse = `**Question:** ${question.question}\n\n**Answer (from your notes):**\n${question.answer}\n\n**Note:** AI chat is not available right now. To enable it, add this to your project \`.env\` file:\nOPENAI_API_KEY=your_key_here\n\nThen refresh the page.\n\n**Your Question:** ${message}`;
+                botResponse = `**Question:** ${question.question}\n\n**Answer:**\n${question.answer}\n\n**Note:** To get AI-powered explanations, please add your ChatGPT API key. For now, here's the answer. Feel free to ask specific questions!\n\n**Your Question:** ${message}\n\nI can help explain any part of this question in detail. What would you like to know more about?`;
             } else {
-                botResponse = localFallbackForGeneralChat(message) ||
-                    `AI chat is not available right now.\n\n**To enable AI:** create/update \`.env\` in the project root with:\nOPENAI_API_KEY=your_key_here\n(Optionally: OPENAI_MODEL=gpt-4o-mini)\n\nThen refresh the page.\n\n**Your Question:** ${message}`;
+                botResponse = `I'm here to help! However, to get AI-powered responses, please configure your ChatGPT API key.\n\n**To add API key:**\nOpen browser console and run:\nlocalStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n\n**Your Question:** ${message}\n\nHow can I help you with your studies?`;
             }
             
-            chatHistory.push({ role: 'assistant', content: botResponse });
             addMessage(botResponse, 'bot');
         } finally {
             // Re-enable input

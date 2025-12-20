@@ -42,7 +42,7 @@
                         </svg>
                         <h3>Drag & Drop your PDF here</h3>
                         <p style="font-size: 0.875rem; color: var(--text-muted);">or click to browse files</p>
-                        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                        <input type="file" id="fileInput" accept=".pdf" multiple style="display: none;">
                         <div class="file-info" id="fileInfo"></div>
                     </div>
                     <button class="btn btn-primary" id="generateBtn" style="width: 100%; margin-top: 1.5rem;" disabled>
@@ -125,86 +125,153 @@
                 e.preventDefault();
                 dropZone.classList.remove('drag-over');
                 const files = e.dataTransfer.files;
-                if (files.length > 0 && files[0].type === 'application/pdf') {
-                    handleFile(files[0]);
-                } else {
-                    alert('Please upload a PDF file.');
-                }
+                addPdfFiles(files);
             });
 
             // File input change handler
             fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    const file = e.target.files[0];
-                    if (file.type === 'application/pdf') {
-                        handleFile(file);
-                    } else {
-                        alert('Please upload a PDF file.');
-                        fileInput.value = '';
-                    }
-                }
+                addPdfFiles(e.target.files);
             });
 
-            function handleFile(file) {
-                // Validate file type
-                if (file.type !== 'application/pdf') {
-                    alert('Please upload a PDF file only.');
-                    fileInput.value = '';
-                    return;
-                }
+            // Multi-PDF selection support
+            const selectedPDFs = [];
+            window.selectedPDFs = selectedPDFs;
 
-                // Display file information
-                const fileSize = (file.size / 1024 / 1024).toFixed(2); // Convert to MB
-                fileInfo.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; padding: 1rem; background: #f0fdfa; border-radius: 0.5rem; border: 1px solid var(--border);">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                        </svg>
-                        <div style="flex: 1;">
-                            <strong style="color: var(--primary); display: block; margin-bottom: 0.25rem;">${file.name}</strong>
-                            <div style="font-size: 0.75rem; color: var(--text-muted);">${fileSize} MB</div>
-                        </div>
-                        <button onclick="removeFile()" style="background: #fee2e2; color: #991b1b; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">Remove</button>
-                    </div>
-                `;
-                fileInfo.style.display = 'block';
-                generateBtn.disabled = false;
-
-                // Store file information in localStorage
-                localStorage.setItem('ready2study_pdf', JSON.stringify({
-                    name: file.name,
-                    size: file.size,
-                    uploaded: true,
-                    uploadDate: new Date().toISOString()
-                }));
-
-                // Store the file object for later processing
-                window.currentPDFFile = file;
-                
-                // Read file as ArrayBuffer for PDF.js
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    // Store file data for PDF processing
-                    window.currentPDFArrayBuffer = e.target.result;
-                    console.log('PDF file loaded successfully:', file.name);
-                };
-                reader.onerror = function() {
-                    alert('Error reading file. Please try again.');
-                    removeFile();
-                };
-                reader.readAsArrayBuffer(file);
+            function isPdfFile(file) {
+                if (!file) return false;
+                if (file.type === 'application/pdf') return true;
+                return (file.name || '').toLowerCase().endsWith('.pdf');
             }
 
-            // Remove file function
-            window.removeFile = function() {
-                if (confirm('Are you sure you want to remove this file?')) {
-                    fileInput.value = '';
+            function formatMB(bytes) {
+                return (bytes / 1024 / 1024).toFixed(2);
+            }
+
+            function updateSelectedPdfMetaStorage() {
+                const meta = selectedPDFs.map(p => ({
+                    name: p.file?.name || '',
+                    size: p.file?.size || 0,
+                    addedAt: p.addedAt
+                }));
+                localStorage.setItem('ready2study_selected_pdfs', JSON.stringify(meta));
+
+                // Keep legacy key for compatibility (shows count when multiple PDFs)
+                const totalSize = meta.reduce((sum, m) => sum + (m.size || 0), 0);
+                const displayName = meta.length === 1 ? meta[0].name : `${meta.length} PDFs`;
+                localStorage.setItem('ready2study_pdf', JSON.stringify({
+                    name: displayName,
+                    size: totalSize,
+                    uploaded: meta.length > 0,
+                    uploadDate: new Date().toISOString()
+                }));
+            }
+
+            function renderSelectedPDFs() {
+                if (selectedPDFs.length === 0) {
                     fileInfo.style.display = 'none';
                     fileInfo.innerHTML = '';
                     generateBtn.disabled = true;
-                    localStorage.removeItem('ready2study_pdf');
+                    return;
                 }
+
+                const rowsHtml = selectedPDFs.map((p, idx) => {
+                    const name = p.file?.name || 'PDF';
+                    const size = p.file?.size || 0;
+                    const addMoreBtn = idx === 0 ? `
+                        <button onclick="addMorePDF()" style="background: var(--gradient-primary); color: white; border: none; padding: 0.5rem 0.85rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; font-weight: 700; transition: all 0.2s;">
+                            Add More PDF
+                        </button>
+                    ` : '';
+                    return `
+                        <div style="display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background: #f0fdfa; border-radius: 0.5rem; border: 1px solid var(--border);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            <div style="flex: 1; min-width: 0;">
+                                <strong style="color: var(--primary); display: block; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</strong>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${formatMB(size)} MB</div>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                ${addMoreBtn}
+                                <button onclick="removePdfAt(${idx})" style="background: #fee2e2; color: #991b1b; border: none; padding: 0.5rem 0.85rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; font-weight: 700; transition: all 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">
+                                    Remove
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                fileInfo.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
+                        ${rowsHtml}
+                    </div>
+                `;
+
+                fileInfo.style.display = 'block';
+                generateBtn.disabled = false;
+            }
+
+            function startReadingArrayBuffer(entry) {
+                entry.arrayBuffer = null;
+                entry.arrayBufferPromise = new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        entry.arrayBuffer = e.target.result;
+                        resolve(entry.arrayBuffer);
+                    };
+                    reader.onerror = function() {
+                        reject(new Error('Error reading file: ' + (entry.file?.name || 'PDF')));
+                    };
+                    reader.readAsArrayBuffer(entry.file);
+                });
+            }
+
+            function addPdfFile(file) {
+                if (!isPdfFile(file)) return;
+
+                const entry = {
+                    file,
+                    addedAt: new Date().toISOString(),
+                    arrayBuffer: null,
+                    arrayBufferPromise: null,
+                };
+
+                startReadingArrayBuffer(entry);
+                selectedPDFs.push(entry);
+
+                updateSelectedPdfMetaStorage();
+                renderSelectedPDFs();
+            }
+
+            function addPdfFiles(files) {
+                if (!files || files.length === 0) return;
+
+                const list = Array.from(files);
+                const pdfs = list.filter(isPdfFile);
+                const nonPdfs = list.filter(f => !isPdfFile(f));
+
+                if (nonPdfs.length > 0) {
+                    alert('Only PDF files are allowed. Non-PDF files were ignored.');
+                }
+                if (pdfs.length === 0) return;
+
+                pdfs.forEach(addPdfFile);
+            }
+
+            // Remove ONE PDF by index
+            window.removePdfAt = function(index) {
+                if (index < 0 || index >= selectedPDFs.length) return;
+                selectedPDFs.splice(index, 1);
+                updateSelectedPdfMetaStorage();
+                renderSelectedPDFs();
+            };
+
+            // Add More PDF - opens file picker and ADDS to the list
+            window.addMorePDF = function() {
+                // Allow selecting the same file again by clearing the input value first
+                fileInput.value = '';
+                fileInput.click();
             };
 
             // Function to extract text from PDF - reads ALL pages completely
@@ -922,14 +989,9 @@
 
             // Generate questions button handler
             generateBtn.addEventListener('click', async () => {
-                const pdfData = localStorage.getItem('ready2study_pdf');
-                if (!pdfData) {
-                    alert('Please upload a PDF file first.');
-                    return;
-                }
-
-                if (!window.currentPDFArrayBuffer) {
-                    alert('PDF file is still loading. Please wait a moment and try again.');
+                const selectedPDFs = Array.isArray(window.selectedPDFs) ? window.selectedPDFs : [];
+                if (selectedPDFs.length === 0) {
+                    alert('Please upload at least one PDF file first.');
                     return;
                 }
 
@@ -943,151 +1005,143 @@
                 const progressBar = document.getElementById('progressBar');
                 const progressText = document.getElementById('progressText');
                 
-                // Keep these in outer scope so the catch block can offer an offline fallback
-                let pdfText = '';
-                let pdfQuestions = [];
+                // Multi-PDF processing state
+                const allQuestionsCombined = [];
+                const pdfSummaries = [];
+                let globalQuestionId = 1;
+                let combinedPdfText = '';
+                let backendAvailable = true;
 
                 try {
-                    // Step 1: Reading PDF - ALL PAGES
-                    loaderTitle.textContent = 'Reading PDF Document...';
-                    loaderMessage.textContent = 'Reading ALL pages completely and extracting full content...';
-                    progressBar.style.width = '20%';
-                    progressText.textContent = '20% - Reading all PDF pages...';
-                    
-                    // Extract text from PDF - this now reads ALL pages completely
-                    pdfText = await extractTextFromPDF(window.currentPDFArrayBuffer);
-                    
-                    // Update progress after reading all pages
-                    progressBar.style.width = '30%';
-                    progressText.textContent = `30% - All pages read successfully (${pdfText.length.toLocaleString()} characters)`;
-                    
-                    console.log('📄 PDF Text Extracted from all pages:', pdfText.substring(0, 500) + '...');
-                    console.log('📊 Total PDF content length:', pdfText.length.toLocaleString(), 'characters');
-                    
-                    // Step 2: Analyzing Content
-                    loaderTitle.textContent = 'Analyzing Content...';
-                    loaderMessage.textContent = 'Identifying key concepts, topics, and extracting meaningful sections...';
-                    progressBar.style.width = '40%';
-                    progressText.textContent = '40% - Analyzing content structure...';
-                    
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Step 3: Generating Questions (20+ questions)
-                    loaderTitle.textContent = 'Generating Questions...';
-                    loaderMessage.textContent = 'Creating 20+ questions organized by marks (1, 2, 3, 10 marks) from all PDF content...';
-                    progressBar.style.width = '60%';
-                    progressText.textContent = '60% - Generating questions from PDF content...';
-                    
-                    pdfQuestions = generateQuestionsFromPDF(pdfText);
-                    
-                    // Update progress
-                    progressBar.style.width = '80%';
-                    progressText.textContent = `80% - Generated ${pdfQuestions.length} questions successfully`;
-                    
-                    // Step 4: Organizing by Marks
-                    loaderTitle.textContent = 'Organizing by Marks...';
-                    loaderMessage.textContent = 'Categorizing questions into 1-mark, 2-mark, 3-mark, and 10-mark categories';
-                    progressBar.style.width = '80%';
-                    progressText.textContent = '80% - Organizing by marks...';
-                    
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Organize questions by marks for display
-                    const questionsByMarks = {
-                        1: pdfQuestions.filter(q => q.marks === 1),
-                        2: pdfQuestions.filter(q => q.marks === 2),
-                        3: pdfQuestions.filter(q => q.marks === 3),
-                        10: pdfQuestions.filter(q => q.marks === 10)
-                    };
-                    
-                    console.log('PDF Fully Processed - Questions organized by marks:', {
-                        '1 Mark': questionsByMarks[1].length,
-                        '2 Marks': questionsByMarks[2].length,
-                        '3 Marks': questionsByMarks[3].length,
-                        '10 Marks': questionsByMarks[10].length,
-                        'Total': pdfQuestions.length,
-                        'PDF Content Length': pdfText.length
-                    });
-                    
-                    // Step 5: Uploading to Backend
-                    loaderTitle.textContent = 'Uploading to Server...';
-                    loaderMessage.textContent = 'Saving PDF and questions to database';
-                    progressBar.style.width = '90%';
-                    progressText.textContent = '90% - Uploading to server...';
-                    
-                    // Upload PDF file to backend
-                    const pdfResponse = await PDFAPI.upload(window.currentPDFFile, pdfText);
-                    const pdfId = pdfResponse.pdf.id;
-                    
-                    // Prepare questions for API (remove id, add exam_date)
-                    const questionsForAPI = pdfQuestions.map(q => ({
-                        question_text: q.question,
-                        answer_text: q.answer,
-                        marks: q.marks,
-                        exam_date: q.examDate || null,
-                    }));
-                    
-                    // Save questions to backend
-                    await QuestionAPI.createBulk(pdfId, questionsForAPI);
-                    
-                    // Step 6: Finalizing
+                    const total = selectedPDFs.length;
+
+                    for (let i = 0; i < total; i++) {
+                        const entry = selectedPDFs[i];
+                        const file = entry?.file;
+                        if (!file) continue;
+
+                        // Ensure ArrayBuffer is ready
+                        loaderTitle.textContent = `Reading PDF ${i + 1}/${total}...`;
+                        loaderMessage.textContent = `Extracting ALL pages: ${file.name}`;
+                        progressBar.style.width = `${Math.round(((i) / total) * 100)}%`;
+                        progressText.textContent = `${i + 1}/${total} - Reading ${file.name}...`;
+
+                        const arrayBuffer = entry.arrayBuffer || (entry.arrayBufferPromise ? await entry.arrayBufferPromise : null);
+                        if (!arrayBuffer) {
+                            throw new Error(`PDF file is still loading: ${file.name}`);
+                        }
+
+                        // Extract text
+                        const pdfText = await extractTextFromPDF(arrayBuffer);
+                        combinedPdfText += `\n\n===== ${file.name} =====\n\n${pdfText}\n`;
+
+                        // Generate questions
+                        loaderTitle.textContent = `Generating Questions ${i + 1}/${total}...`;
+                        loaderMessage.textContent = `Creating questions from: ${file.name}`;
+                        progressBar.style.width = `${Math.round(((i + 0.5) / total) * 100)}%`;
+                        progressText.textContent = `${i + 1}/${total} - Generating questions...`;
+
+                        const pdfQuestions = generateQuestionsFromPDF(pdfText) || [];
+
+                        // Add to combined list with globally unique IDs + PDF name label
+                        pdfQuestions.forEach(q => {
+                            allQuestionsCombined.push({
+                                id: globalQuestionId++,
+                                question: q.question,
+                                answer: q.answer,
+                                marks: q.marks,
+                                examDate: q.examDate || null,
+                                pdfName: file.name
+                            });
+                        });
+
+                        let savedPdfId = null;
+
+                        // Upload + save to backend (optional; auto-falls back to offline if DB is down)
+                        if (backendAvailable) {
+                            try {
+                                loaderTitle.textContent = `Uploading ${i + 1}/${total}...`;
+                                loaderMessage.textContent = `Saving to database: ${file.name}`;
+                                progressBar.style.width = `${Math.round(((i + 0.8) / total) * 100)}%`;
+                                progressText.textContent = `${i + 1}/${total} - Uploading to server...`;
+
+                                const pdfResponse = await PDFAPI.upload(file, pdfText);
+                                savedPdfId = pdfResponse?.pdf?.id ?? null;
+
+                                if (savedPdfId) {
+                                    const questionsForAPI = pdfQuestions.map(q => ({
+                                        question_text: q.question,
+                                        answer_text: q.answer,
+                                        marks: q.marks,
+                                        exam_date: q.examDate || null,
+                                    }));
+                                    await QuestionAPI.createBulk(savedPdfId, questionsForAPI);
+                                }
+                            } catch (err) {
+                                const msg = (err && err.message) ? err.message : String(err);
+                                const looksLikeDbIssue = /database unavailable|cannot reach mysql|mysql|database connection|timed out/i.test(msg);
+                                if (looksLikeDbIssue) {
+                                    backendAvailable = false;
+                                    console.warn('⚠️ Backend unavailable. Continuing in OFFLINE mode for remaining PDFs.');
+                                } else {
+                                    throw err;
+                                }
+                            }
+                        }
+
+                        pdfSummaries.push({
+                            id: savedPdfId,
+                            name: file.name,
+                            size: file.size,
+                            questionCount: pdfQuestions.length
+                        });
+                    }
+
+                    // Finalizing
                     loaderTitle.textContent = 'Finalizing...';
                     loaderMessage.textContent = 'Preparing questions and answers for display';
                     progressBar.style.width = '100%';
-                    progressText.textContent = '100% - Complete!';
-                    
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // Store PDF ID and questions in localStorage for quick access
-                    // Ensure PDF ID is stored as number for API calls
-                    localStorage.setItem('ready2study_current_pdf_id', String(pdfId));
-                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(pdfQuestions));
-                    localStorage.setItem('ready2study_pdf_content', pdfText);
+                    progressText.textContent = `100% - Complete! (${allQuestionsCombined.length} questions)`;
+
+                    await new Promise(resolve => setTimeout(resolve, 400));
+
+                    // Store combined questions + a summary of PDFs
+                    localStorage.setItem('ready2study_pdf_questions', JSON.stringify(allQuestionsCombined));
+                    localStorage.setItem('ready2study_multi_pdfs', JSON.stringify(pdfSummaries));
                     localStorage.setItem('ready2study_pdf_uploaded', 'true');
-                    localStorage.setItem('ready2study_pdf_name', window.currentPDFFile.name);
-                    
-                    console.log('✓ PDF uploaded successfully!');
-                    console.log('  PDF ID:', pdfId);
-                    console.log('  Questions saved:', pdfQuestions.length);
-                    console.log('  Redirecting to dashboard...');
-                    
+
+                    // Store a combined (truncated) PDF content for "View Full PDF Content" section
+                    const MAX_LOCAL_CONTENT = 500000; // keep under typical localStorage limits
+                    const safeCombinedText = combinedPdfText.length > MAX_LOCAL_CONTENT
+                        ? combinedPdfText.slice(0, MAX_LOCAL_CONTENT)
+                        : combinedPdfText;
+                    localStorage.setItem('ready2study_pdf_content', safeCombinedText);
+
+                    const displayName = selectedPDFs.length === 1 ? selectedPDFs[0].file.name : `${selectedPDFs.length} PDFs`;
+                    localStorage.setItem('ready2study_pdf_name', displayName);
+
+                    // For multi-PDF mode, avoid forcing the dashboard to fetch a single PDF from API
+                    if (pdfSummaries.length === 1 && pdfSummaries[0].id) {
+                        localStorage.setItem('ready2study_current_pdf_id', String(pdfSummaries[0].id));
+                    } else {
+                        localStorage.removeItem('ready2study_current_pdf_id');
+                    }
+
                     loader.style.display = 'none';
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Questions';
-                    
+
                     // Small delay to ensure localStorage is saved before redirect
                     await new Promise(resolve => setTimeout(resolve, 100));
                     window.location.href = 'dashboard.html';
                     
                 } catch (error) {
-                    console.error('Error processing PDF:', error);
+                    console.error('Error processing PDFs:', error);
                     loader.style.display = 'none';
                     generateBtn.disabled = false;
                     generateBtn.textContent = 'Generate Questions';
-
                     const msg = (error && error.message) ? error.message : String(error);
-                    const looksLikeDbIssue = /database unavailable|cannot reach mysql|mysql|database connection|timed out/i.test(msg);
-
-                    // Offer offline mode if the backend is down/unreachable
-                    if (looksLikeDbIssue && Array.isArray(pdfQuestions) && pdfQuestions.length > 0 && pdfText && window.currentPDFFile) {
-                        const proceedOffline = confirm(
-                            'The server database is not available (MySQL may not be running).\n\n' +
-                            'Do you want to continue in OFFLINE mode (save questions locally and open the dashboard)?'
-                        );
-
-                        if (proceedOffline) {
-                            localStorage.setItem('ready2study_pdf_questions', JSON.stringify(pdfQuestions));
-                            localStorage.setItem('ready2study_pdf_content', pdfText);
-                            localStorage.setItem('ready2study_pdf_uploaded', 'true');
-                            localStorage.setItem('ready2study_pdf_name', window.currentPDFFile.name);
-                            localStorage.removeItem('ready2study_current_pdf_id');
-
-                            window.location.href = 'dashboard.html';
-                            return;
-                        }
-                    }
-
-                    alert('Error processing PDF. Please try again or use a different PDF file. Error: ' + msg);
+                    alert('Error processing PDFs. Please try again. Error: ' + msg);
                 }
             });
 
