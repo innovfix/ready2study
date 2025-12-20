@@ -1597,6 +1597,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Chat Functionality
     let currentChatQuestionId = null;
+    let chatHistory = [];
     const chatButton = document.getElementById('chatButton');
     const chatModal = document.getElementById('chatModal');
     const chatClose = document.getElementById('chatClose');
@@ -1608,6 +1609,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openGeneralChat() {
         currentChatQuestionId = null;
+        chatHistory = [];
         if (chatHeaderTitle) chatHeaderTitle.textContent = 'Chat About Questions';
         if (chatWelcomeMessage) chatWelcomeMessage.textContent = 'Hello! I\'m here to help you with questions. Ask me anything!';
         
@@ -1623,6 +1625,25 @@ document.addEventListener('DOMContentLoaded', () => {
         
         chatModal.classList.add('active');
         if (chatInput) chatInput.focus();
+    }
+
+    // Backend chat endpoint (server-side OpenAI proxy)
+    const CHAT_API_ENDPOINT = 'api/chat.php';
+
+    function localFallbackForGeneralChat(userMessage) {
+        const m = (userMessage || '').toLowerCase();
+        if (m.includes('input')) {
+            return (
+                "**Input (உள்ளீடு) என்றால் என்ன?**\n\n" +
+                "Input என்பது ஒரு computer/program-க்கு நாம் கொடுக்கும் data அல்லது instructions.\n\n" +
+                "**Examples:**\n" +
+                "- Keyboard-ல type பண்ணுற text\n" +
+                "- Mouse click\n" +
+                "- Form-ல enter பண்ணுற name/marks\n\n" +
+                "இதுக்கு எதிர் தான் **Output (வெளியீடு)** — program process பண்ணி தரும் result."
+            );
+        }
+        return null;
     }
 
     if (chatButton) {
@@ -1652,6 +1673,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return;
 
         addMessage(message, 'user');
+        chatHistory.push({ role: 'user', content: message });
         chatInput.value = '';
 
         // Disable input while processing
@@ -1672,53 +1694,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
-            const CHATGPT_API_KEY = localStorage.getItem('chatgpt_api_key') || '';
-            const CHATGPT_API_URL = 'https://api.openai.com/v1/chat/completions';
-            
-            // Build context for ChatGPT
-            let systemPrompt = 'You are a helpful study assistant helping students understand exam questions. Provide clear, detailed explanations in a friendly and encouraging manner.';
-            let userPrompt = message;
-            
-            if (question) {
-                systemPrompt = `You are a helpful study assistant. A student is asking about this ${question.marks}-mark question: "${question.question}". The correct answer is: "${question.answer}". Help them understand the question and answer clearly. Provide explanations in simple terms, give examples if helpful, and encourage their learning.`;
-                userPrompt = `Question: ${question.question}\n\nAnswer: ${question.answer}\n\nStudent's question: ${message}`;
+
+            const response = await fetch(CHAT_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message,
+                    question: question ? question.question : '',
+                    answer: question ? question.answer : '',
+                    marks: question ? question.marks : 0,
+                    history: chatHistory.slice(-10),
+                })
+            });
+
+            const responseText = await response.text();
+            let data = null;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error('Server returned an invalid response.');
             }
 
-            // Call ChatGPT API
-            if (CHATGPT_API_KEY) {
-                const response = await fetch(CHATGPT_API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${CHATGPT_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        model: 'gpt-3.5-turbo',
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: userPrompt }
-                        ],
-                        temperature: 0.7,
-                        max_tokens: 500
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
-                }
-
-                const data = await response.json();
-                const botResponse = data.choices[0].message.content;
-                
-                // Remove typing indicator
-                const indicator = document.getElementById('typing-indicator');
-                if (indicator) indicator.remove();
-                
-                addMessage(botResponse, 'bot');
-                } else {
-                // Fallback: Use local responses if no API key
-                throw new Error('No API key configured');
+            if (!response.ok) {
+                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `Request failed (${response.status})`;
+                throw new Error(msg);
             }
+
+            const botResponse = (data && (data.reply || data.message)) ? (data.reply || data.message) : '';
+            if (!botResponse) throw new Error('Empty AI response');
+
+            // Remove typing indicator
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+
+            chatHistory.push({ role: 'assistant', content: botResponse });
+            addMessage(botResponse, 'bot');
         } catch (error) {
             console.error('ChatGPT API Error:', error);
             
@@ -1731,11 +1741,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const question = currentChatQuestionId ? allQuestions.find(q => q.id === currentChatQuestionId) : null;
             
             if (question) {
-                botResponse = `**Question:** ${question.question}\n\n**Answer:**\n${question.answer}\n\n**Note:** To get AI-powered explanations with ChatGPT, please add your OpenAI API key. Open browser console (F12) and run:\nlocalStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n\n**Your Question:** ${message}\n\nI can help explain any part of this question. What would you like to know more about?`;
+                botResponse = `**Question:** ${question.question}\n\n**Answer (from your notes):**\n${question.answer}\n\n**Note:** AI chat is not available right now. To enable it, add this to your project \`.env\` file:\nOPENAI_API_KEY=your_key_here\n\nThen refresh the page.\n\n**Your Question:** ${message}`;
             } else {
-                botResponse = `I'm here to help! To get AI-powered ChatGPT responses, please configure your API key.\n\n**To add API key:**\n1. Press F12 to open browser console\n2. Run: localStorage.setItem('chatgpt_api_key', 'your-api-key-here')\n3. Refresh the page\n\n**Your Question:** ${message}\n\nHow can I help you with your studies?`;
+                botResponse = localFallbackForGeneralChat(message) ||
+                    `AI chat is not available right now.\n\n**To enable AI:** create/update \`.env\` in the project root with:\nOPENAI_API_KEY=your_key_here\n(Optionally: OPENAI_MODEL=gpt-4o-mini)\n\nThen refresh the page.\n\n**Your Question:** ${message}`;
             }
             
+            chatHistory.push({ role: 'assistant', content: botResponse });
             addMessage(botResponse, 'bot');
         } finally {
             // Re-enable input

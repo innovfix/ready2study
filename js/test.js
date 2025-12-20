@@ -871,6 +871,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Chat Functionality
+    const CHAT_API_ENDPOINT = 'api/chat.php';
+    let chatHistory = [];
     const chatButton = document.getElementById('chatButton');
     const chatModal = document.getElementById('chatModal');
     const chatClose = document.getElementById('chatClose');
@@ -880,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Open chat modal
     chatButton.addEventListener('click', () => {
+        chatHistory = [];
         chatModal.classList.add('active');
         chatInput.focus();
     });
@@ -896,50 +899,91 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Send message function
-    function sendMessage() {
+    // Send message function (AI-backed)
+    async function sendMessage() {
         const message = chatInput.value.trim();
         if (!message) return;
 
         // Add user message
         addMessage(message, 'user');
+        chatHistory.push({ role: 'user', content: message });
         chatInput.value = '';
 
-        // Simulate bot response (in production, this would call an API)
-        setTimeout(() => {
+        // Disable while processing
+        chatInput.disabled = true;
+        chatSend.disabled = true;
+
+        // Typing indicator
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'chat-message bot-message';
+        typingIndicator.id = 'typing-indicator';
+        typingIndicator.innerHTML = `
+            <div class="message-content">
+                <p style="color: var(--text-muted); font-style: italic;">AI is thinking...</p>
+            </div>
+        `;
+        chatMessages.appendChild(typingIndicator);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
             const currentQuestion = testQuestions[currentQuestionIndex];
-            let botResponse = '';
-            
-            if (message.toLowerCase().includes('current question') || message.toLowerCase().includes('this question')) {
-                botResponse = `The current question is: "${currentQuestion.question}". It's worth ${currentQuestion.marks} mark${currentQuestion.marks > 1 ? 's' : ''}. How can I help you with it?`;
-            } else if (message.toLowerCase().includes('answer') || message.toLowerCase().includes('solution') || message.toLowerCase().includes('what is the answer')) {
-                // Generate brief answer
-                const briefAnswer = currentQuestion.answer.length > 200 
-                    ? currentQuestion.answer.substring(0, 200) + '...' 
-                    : currentQuestion.answer;
-                botResponse = `**Brief Answer:**\n\n${briefAnswer}\n\nThis is a ${currentQuestion.marks}-mark question. The answer covers the key points needed to address: "${currentQuestion.question.substring(0, 60)}..."`;
-            } else if (message.toLowerCase().includes('help') || message.toLowerCase().includes('hint')) {
-                botResponse = `I'm here to help! You can ask me about:
-- Understanding what the question is asking
-- Breaking down complex questions
-- Study tips and strategies
-- General test guidance`;
-            } else if (message.toLowerCase().includes('brief') || message.toLowerCase().includes('summary') || message.toLowerCase().includes('summarize')) {
-                // Generate brief summary
-                const briefSummary = currentQuestion.answer.length > 150 
-                    ? currentQuestion.answer.substring(0, 150) + '...' 
-                    : currentQuestion.answer;
-                botResponse = `**Brief Summary:**\n\n${briefSummary}\n\nThis addresses the question: "${currentQuestion.question}"`;
-            } else {
-                // Default: provide brief answer automatically
-                const briefAnswer = currentQuestion.answer.length > 200 
-                    ? currentQuestion.answer.substring(0, 200) + '...' 
-                    : currentQuestion.answer;
-                botResponse = `**Question:** ${currentQuestion.question}\n\n**Brief Answer:**\n${briefAnswer}\n\nWould you like more details or help understanding any specific part?`;
+
+            const response = await fetch(CHAT_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message,
+                    question: currentQuestion ? currentQuestion.question : '',
+                    answer: currentQuestion ? currentQuestion.answer : '',
+                    marks: currentQuestion ? currentQuestion.marks : 0,
+                    history: chatHistory.slice(-10),
+                })
+            });
+
+            const responseText = await response.text();
+            let data = null;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error('Server returned an invalid response.');
             }
-            
+
+            if (!response.ok) {
+                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `Request failed (${response.status})`;
+                throw new Error(msg);
+            }
+
+            const botResponse = (data && (data.reply || data.message)) ? (data.reply || data.message) : '';
+            if (!botResponse) throw new Error('Empty AI response');
+
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+
+            chatHistory.push({ role: 'assistant', content: botResponse });
             addMessage(botResponse, 'bot');
-        }, 500);
+        } catch (error) {
+            console.error('AI chat error:', error);
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+
+            const currentQuestion = testQuestions[currentQuestionIndex];
+            const briefAnswer = currentQuestion && currentQuestion.answer
+                ? (currentQuestion.answer.length > 250 ? currentQuestion.answer.substring(0, 250) + '...' : currentQuestion.answer)
+                : '';
+
+            const botResponse =
+                `AI chat is not available right now.\n\n` +
+                `**Question:** ${currentQuestion?.question || ''}\n\n` +
+                `**Brief Answer:**\n${briefAnswer}\n\n` +
+                `**To enable AI:** create/update \`.env\` in the project root with:\nOPENAI_API_KEY=your_key_here\n\nThen refresh the page.`;
+
+            chatHistory.push({ role: 'assistant', content: botResponse });
+            addMessage(botResponse, 'bot');
+        } finally {
+            chatInput.disabled = false;
+            chatSend.disabled = false;
+            chatInput.focus();
+        }
     }
 
     // Add message to chat
