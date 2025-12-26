@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Important Questions | Ready2Study</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <header>
+        <div class="container nav-content">
+            <a href="index.html" class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                </svg>
+                Ready<span>2Study</span>
+            </a>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <a href="dashboard.html" class="btn btn-secondary" style="padding: 0.6rem 1rem; font-size: 0.9rem;">
+                    Back to Dashboard
+                </a>
+                <a href="dashboard.html" class="btn btn-primary" style="padding: 0.6rem 1rem; font-size: 0.9rem;">
+                    Open Dashboard
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container" style="padding: 2rem 0;">
+        <div style="max-width: 980px; margin: 0 auto;">
+            <div style="margin-bottom: 1.25rem;">
+                <h1 style="font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em;">Admin: Important Questions</h1>
+                <p style="margin-top: 0.5rem; color: var(--text-muted);">
+                    Select questions here. They will show as <strong>Important</strong> on the main Dashboard.
+                    <span style="display: inline-block; margin-left: 0.25rem; font-size: 0.9em;">
+                        (Saved in this browser)
+                    </span>
+                </p>
+            </div>
+
+            <div style="background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; box-shadow: var(--shadow-sm);">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+                    <div style="min-width:240px;">
+                        <div style="font-weight: 900; color: var(--text-main); font-size: 1.05rem;">Type Important Questions</div>
+                        <div style="margin-top: 0.35rem; color: var(--text-muted); font-size: 0.9rem;">
+                            Type your questions here (one per line). These questions will be shown as <strong>Important</strong> in the Dashboard.
+                        </div>
+                    </div>
+                    <button id="clearAllImportantBtn" class="btn btn-secondary" type="button"
+                        style="padding: 0.6rem 1rem; border-color: #fecaca; color: #b91c1c; background: #fff;">
+                        Clear all
+                    </button>
+                </div>
+
+                <form id="importantForm" style="margin-top: 1rem;">
+                    <div style="display:flex; gap:0.75rem; align-items:stretch;">
+                        <textarea id="importantInput" rows="5" placeholder="Type important questions here…"
+                            style="flex:1; width:100%; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 0.85rem; outline: none; resize: vertical; font-size: 0.95rem;"></textarea>
+                        <button id="markImportantBtn" class="btn btn-primary" type="submit"
+                            style="padding: 0.9rem 1.15rem; min-width: 140px; font-weight: 900;">
+                            Important
+                        </button>
+                    </div>
+                </form>
+
+                <div style="margin-top: 1.25rem;">
+                    <div style="font-weight: 900; color: var(--text-main); margin-bottom: 0.75rem;">Saved Important Questions</div>
+                    <div id="savedImportantList" style="display:flex; flex-direction:column; gap:0.6rem;"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="js/admin.js"></script>
+</body>
+</html>
+
+

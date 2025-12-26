@@ -596,13 +596,41 @@ document.addEventListener('DOMContentLoaded', () => {
     function getImportantQuestions() {
         const stored = localStorage.getItem(IMPORTANT_STORAGE_KEY);
         if (!stored) return [];
-        const data = JSON.parse(stored);
-        // Handle old format (array of IDs) and new format (array of objects)
-        if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
-            // Convert old format to new format
-            return data.map(id => ({ id, name: '' }));
+        let data;
+        try {
+            data = JSON.parse(stored);
+        } catch (e) {
+            return [];
         }
-        return data;
+
+        if (!Array.isArray(data)) return [];
+
+        // Normalize to a consistent shape:
+        // - legacy: [1,2,3] -> [{id, name}]
+        // - new(admin): ["what is AI", "define OS"] -> [{text}]
+        // - mixed objects: [{id,name}] or [{text}] or [{id,text,name}]
+        return data
+            .map(item => {
+                if (typeof item === 'number') {
+                    return { id: item, name: '' };
+                }
+                if (typeof item === 'string') {
+                    return { text: item };
+                }
+                if (item && typeof item === 'object') {
+                    const id = Number(item.id);
+                    const name = typeof item.name === 'string' ? item.name : '';
+                    const text = typeof item.text === 'string' ? item.text : '';
+                    if (Number.isFinite(id) && id > 0) {
+                        return { id, name, text };
+                    }
+                    if (text && text.trim()) {
+                        return { text: text.trim(), name };
+                    }
+                }
+                return null;
+            })
+            .filter(Boolean);
     }
 
     function saveImportantQuestions(importantList) {
@@ -640,9 +668,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function normalizeImportantText(text) {
+        return String(text ?? '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     function isImportant(questionId) {
         const important = getImportantQuestions();
-        return important.some(i => i.id === questionId);
+        // ID-based important (legacy)
+        if (important.some(i => typeof i.id === 'number' && i.id === questionId)) {
+            return true;
+        }
+
+        // Text-based important (admin typed questions)
+        const q = allQuestions.find(q => q.id === questionId);
+        const questionText = q?.question || q?.question_text || '';
+        if (!questionText) return false;
+        const haystack = normalizeImportantText(questionText);
+        if (!haystack) return false;
+
+        return important.some(i => {
+            if (!i.text) return false;
+            const needle = normalizeImportantText(i.text);
+            if (!needle || needle.length < 5) return false;
+            return haystack.includes(needle);
+        });
+    }
+
+    function getImportantTextEntries() {
+        const important = getImportantQuestions();
+        const texts = [];
+
+        important.forEach(item => {
+            if (item && typeof item.text === 'string' && item.text.trim()) {
+                texts.push(item.text.trim());
+                return;
+            }
+
+            if (typeof item?.id === 'number') {
+                const q = allQuestions.find(q => q.id === item.id);
+                const text = (q?.question || q?.question_text || '').trim();
+                if (text) texts.push(text);
+            }
+        });
+
+        const seen = new Set();
+        const unique = [];
+        texts.forEach(t => {
+            const nt = normalizeImportantText(t);
+            if (!nt) return;
+            if (seen.has(nt)) return;
+            seen.add(nt);
+            unique.push(t);
+        });
+
+        return unique;
+    }
+
+    function toggleSaveImportant(questionId) {
+        const q = allQuestions.find(q => q.id === questionId);
+        const questionText = (q?.question || q?.question_text || '').trim();
+        if (!questionText) return null;
+
+        const normQ = normalizeImportantText(questionText);
+        const entries = getImportantTextEntries();
+        const matches = entries
+            .map((t, idx) => ({ idx, t, norm: normalizeImportantText(t) }))
+            .filter(x => x.norm && (normQ.includes(x.norm) || x.norm.includes(normQ)));
+
+        if (matches.length > 0) {
+            matches.sort((a, b) => b.norm.length - a.norm.length);
+            entries.splice(matches[0].idx, 1);
+            saveImportantQuestions(entries);
+            return false;
+        }
+
+        entries.push(questionText);
+        saveImportantQuestions(entries);
+        return true;
     }
 
     // Filter questions by marks
@@ -957,10 +1063,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg>
                                             Translate
                                         </button>
-                                        <button class="btn-icon pdf-save-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                                            ${isImportantQuestion ? 'Saved' : 'Save'}
-                                        </button>
                                     </div>
                                 </div>
                             `;
@@ -1227,21 +1329,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // Save button
-        document.querySelectorAll('.pdf-save-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const questionId = parseInt(btn.getAttribute('data-question-id'));
-                const question = allQuestions.find(q => q.id === questionId);
-                if (question) {
-                    const isNowImportant = toggleImportant(questionId, question.question.substring(0, 50));
-                    btn.classList.toggle('active', isNowImportant);
-                    btn.style.background = isNowImportant ? '#fef2f2' : '#fff';
-                    btn.style.color = isNowImportant ? '#ef4444' : '#64748b';
-                    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="${isNowImportant ? '#ef4444' : 'none'}" stroke="${isNowImportant ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg> ${isNowImportant ? 'Saved' : 'Save'}`;
-                }
-            });
-        });
+        // Important toggling is admin-only now (handled in admin.html)
     }
     
     // Generate Questions Button Handler
@@ -1606,6 +1694,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const filter = btn.dataset.filter;
             if (filter === 'all') {
                 btn.innerHTML = `All Questions <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${allQuestions.length}</span>`;
+            } else if (filter === 'important') {
+                const importantCount = allQuestions.filter(q => isImportant(q.id)).length;
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem; vertical-align: middle;">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                    </svg>
+                    Important <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${importantCount}</span>
+                `;
             } else if (filter === '1') {
                 btn.innerHTML = `1 Mark <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${summary[1]}</span>`;
             } else if (filter === '2') {
@@ -2138,6 +2234,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const isImportantQuestion = isImportant(q.id);
             const importantName = isImportantQuestion ? getImportantQuestionName(q.id) : '';
+            const importantBadge = isImportantQuestion ? `
+                <span style="background: #fee2e2; color: #b91c1c; padding: 0.35rem 0.75rem; border-radius: 999px; font-weight: 800; font-size: 0.75rem; border: 1px solid #fecaca;">
+                    Important${importantName ? `: ${escapeHtml(importantName)}` : ''}
+                </span>
+            ` : '';
 
             // Get the mark badge color
             const markColors = {
@@ -2169,6 +2270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="color: #64748b; font-size: 0.875rem; font-weight: 600;">
                             Q${questionNumber}
                         </span>
+                        ${importantBadge}
                         ${pdfNameBadge}
                     </div>
                     
@@ -2234,8 +2336,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 8l-6 6"></path><path d="M20 14l-6-6 2-3"></path></svg>
                         Untranslate
                     </button>
-                    <button class="btn-icon important-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    <button class="btn-icon save-important-btn ${isImportantQuestion ? 'active' : ''}" title="Save" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#ef4444' : '#fff'}; color: ${isImportantQuestion ? '#fff' : '#ef4444'}; border: 1px solid ${isImportantQuestion ? '#ef4444' : '#fecaca'}; padding: 0.35rem 0.6rem; border-radius: 0.375rem; font-size: 0.7rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         ${isImportantQuestion ? 'Saved' : 'Save'}
                     </button>
                 </div>
@@ -2288,7 +2390,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const stopListenBtns = document.querySelectorAll('.stop-listen-btn');
             const translateBtns = document.querySelectorAll('.translate-question-btn');
             const untranslateBtns = document.querySelectorAll('.untranslate-question-btn');
-            const importantBtns = document.querySelectorAll('.important-btn');
+            // Important toggling is admin-only now (handled in admin.html)
             console.log('✅ ALL FEATURES LOADED AND READY:');
             console.log(`  📊 Total Questions: ${questions.length}`);
             console.log(`  📝 View Mode: Grid (All questions displayed)`);
@@ -2300,7 +2402,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`  ⏹️ Stop Listen Buttons: ${stopListenBtns.length}`);
             console.log(`  🌐 Translate Buttons: ${translateBtns.length}`);
             console.log(`  🔄 Untranslate Buttons: ${untranslateBtns.length}`);
-            console.log(`  ❤️ Save Buttons: ${importantBtns.length}`);
             console.log('\n✅ All questions and answers are displayed with all features ready!');
         }, 100);
 
@@ -2908,31 +3009,21 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Add important button handlers
-        document.querySelectorAll('.important-btn').forEach(btn => {
+        // Save button handlers (Save as Important)
+        document.querySelectorAll('.save-important-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
-                console.log('✅ Save as Important clicked for question:', questionId);
-                const isNowImportant = toggleImportant(questionId);
-                
-                // Update button appearance
-                if (isNowImportant) {
-                    btn.classList.add('active');
-                    btn.style.background = '#fef2f2';
-                    btn.style.color = '#ef4444';
-                    btn.querySelector('svg').setAttribute('fill', '#ef4444');
-                } else {
-                    btn.classList.remove('active');
-                    btn.style.background = '';
-                    btn.style.color = '';
-                    btn.querySelector('svg').setAttribute('fill', 'none');
-                }
-                
-                // Update sidebar count
+                toggleSaveImportant(questionId);
+
+                // Re-render so badge + filter count update immediately
                 displayQuestionSummary();
+                const filteredQuestions = filterQuestionsByMarks(allQuestions, currentFilter);
+                renderQuestions(filteredQuestions);
             });
         });
+
+        // Important is controlled via Admin + Save button
 
         // Add attach media button handlers
     }

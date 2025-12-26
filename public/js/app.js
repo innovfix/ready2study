@@ -503,11 +503,37 @@ document.addEventListener('DOMContentLoaded', () => {
     function getImportantQuestions() {
         const stored = localStorage.getItem(IMPORTANT_STORAGE_KEY);
         if (!stored) return [];
-        const data = JSON.parse(stored);
-        if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
-            return data.map(id => ({ id, name: '' }));
+        let data;
+        try {
+            data = JSON.parse(stored);
+        } catch (e) {
+            return [];
         }
-        return data;
+
+        if (!Array.isArray(data)) return [];
+
+        return data
+            .map(item => {
+                if (typeof item === 'number') {
+                    return { id: item, name: '' };
+                }
+                if (typeof item === 'string') {
+                    return { text: item };
+                }
+                if (item && typeof item === 'object') {
+                    const id = Number(item.id);
+                    const name = typeof item.name === 'string' ? item.name : '';
+                    const text = typeof item.text === 'string' ? item.text : '';
+                    if (Number.isFinite(id) && id > 0) {
+                        return { id, name, text };
+                    }
+                    if (text && text.trim()) {
+                        return { text: text.trim(), name };
+                    }
+                }
+                return null;
+            })
+            .filter(Boolean);
     }
 
     function saveImportantQuestions(importantList) {
@@ -545,9 +571,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function normalizeImportantText(text) {
+        return String(text ?? '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     function isImportant(questionId) {
         const important = getImportantQuestions();
-        return important.some(i => i.id === questionId);
+        if (important.some(i => typeof i.id === 'number' && i.id === questionId)) {
+            return true;
+        }
+
+        const q = allQuestions.find(q => q.id === questionId);
+        const questionText = q?.question || q?.question_text || '';
+        if (!questionText) return false;
+        const haystack = normalizeImportantText(questionText);
+        if (!haystack) return false;
+
+        return important.some(i => {
+            if (!i.text) return false;
+            const needle = normalizeImportantText(i.text);
+            if (!needle || needle.length < 5) return false;
+            return haystack.includes(needle);
+        });
+    }
+
+    function getImportantTextEntries() {
+        const important = getImportantQuestions();
+        const texts = [];
+
+        important.forEach(item => {
+            if (item && typeof item.text === 'string' && item.text.trim()) {
+                texts.push(item.text.trim());
+                return;
+            }
+
+            if (typeof item?.id === 'number') {
+                const q = allQuestions.find(q => q.id === item.id);
+                const text = (q?.question || q?.question_text || '').trim();
+                if (text) texts.push(text);
+            }
+        });
+
+        // Dedupe by normalized text
+        const seen = new Set();
+        const unique = [];
+        texts.forEach(t => {
+            const nt = normalizeImportantText(t);
+            if (!nt) return;
+            if (seen.has(nt)) return;
+            seen.add(nt);
+            unique.push(t);
+        });
+
+        return unique;
+    }
+
+    function toggleSaveImportant(questionId) {
+        const q = allQuestions.find(q => q.id === questionId);
+        const questionText = (q?.question || q?.question_text || '').trim();
+        if (!questionText) return null;
+
+        const normQ = normalizeImportantText(questionText);
+        const entries = getImportantTextEntries();
+        const matches = entries
+            .map((t, idx) => ({ idx, t, norm: normalizeImportantText(t) }))
+            .filter(x => x.norm && (normQ.includes(x.norm) || x.norm.includes(normQ)));
+
+        if (matches.length > 0) {
+            // Remove the most specific match (longest)
+            matches.sort((a, b) => b.norm.length - a.norm.length);
+            entries.splice(matches[0].idx, 1);
+            saveImportantQuestions(entries); // store as text list
+            return false;
+        }
+
+        entries.push(questionText);
+        saveImportantQuestions(entries);
+        return true;
     }
 
     // Load questions
@@ -612,6 +716,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const filter = btn.dataset.filter;
             if (filter === 'all') {
                 btn.innerHTML = `All Questions <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${allQuestions.length}</span>`;
+            } else if (filter === 'important') {
+                const importantCount = allQuestions.filter(q => isImportant(q.id)).length;
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.5rem; vertical-align: middle;">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                    </svg>
+                    Important <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${importantCount}</span>
+                `;
             } else if (filter === '1') {
                 btn.innerHTML = `1 Mark <span style="background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 0.75rem; margin-left: 0.5rem;">${summary[1]}</span>`;
             } else if (filter === '2') {
@@ -820,16 +932,16 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.opacity = '1';
 
             // Format answer with line breaks if needed
-            const answerText = q.answer || q.answer_text || 'No answer provided';
+            const answerRawText = q.answer || q.answer_text || 'No answer provided';
             
             // Format answer as list if it contains list items
-            let formattedAnswer = answerText;
+            let formattedAnswer = answerRawText;
             
             // Check if answer contains comma-separated list items (common pattern)
             // Pattern: "item1, item2, item3" or "item1,item2,item3"
-            if (answerText.includes(',') && !answerText.includes('\n')) {
+            if (answerRawText.includes(',') && !answerRawText.includes('\n')) {
                 // Split by comma and format as list
-                const items = answerText.split(',').map(item => item.trim()).filter(item => item.length > 0);
+                const items = answerRawText.split(',').map(item => item.trim()).filter(item => item.length > 0);
                 if (items.length > 1) {
                     // Format as list with each item on a new line
                     formattedAnswer = items.map(item => {
@@ -838,12 +950,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         return item;
                     }).join('<br>');
                 } else {
-                    formattedAnswer = answerText.replace(/\n/g, '<br>');
+                    formattedAnswer = answerRawText.replace(/\n/g, '<br>');
                 }
             } 
             // Check for numbered lists (1. item, 2. item, etc.)
-            else if (answerText.match(/^\d+[\.\)]\s+/m) || answerText.match(/\n\d+[\.\)]\s+/)) {
-                formattedAnswer = answerText
+            else if (answerRawText.match(/^\d+[\.\)]\s+/m) || answerRawText.match(/\n\d+[\.\)]\s+/)) {
+                formattedAnswer = answerRawText
                     .split(/\n/)
                     .map(line => {
                         // If line starts with number, keep it; otherwise add line break
@@ -856,8 +968,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     .join('<br>');
             }
             // Check for bulleted lists (-, •, etc.)
-            else if (answerText.match(/^[-•]\s+/m) || answerText.match(/\n[-•]\s+/)) {
-                formattedAnswer = answerText
+            else if (answerRawText.match(/^[-•]\s+/m) || answerRawText.match(/\n[-•]\s+/)) {
+                formattedAnswer = answerRawText
                     .split(/\n/)
                     .map(line => line.trim())
                     .filter(line => line.length > 0)
@@ -865,7 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Regular text - just replace newlines with <br>
             else {
-                formattedAnswer = answerText.replace(/\n/g, '<br>');
+                formattedAnswer = answerRawText.replace(/\n/g, '<br>');
             }
             
             // Fix pronouns in questions by extracting nouns from answer
@@ -915,13 +1027,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if question contains pronouns and fix it
             const pronounPattern = /\b(what is|explain|describe|write about|discuss)\s+(this|these|that|those|then|there|their|they|them|it|its|he|she|him|her|his|hers|we|us|our|ours|you|your|yours|i|me|my|mine)\b/gi;
             if (pronounPattern.test(questionText)) {
-                const noun = extractNounFromAnswer(answerText);
+                const noun = extractNounFromAnswer(answerRawText);
                 if (noun) {
                     // Replace pronoun with actual noun
                     questionText = questionText.replace(/\b(this|these|that|those|then|there|their|they|them|it|its|he|she|him|her|his|hers|we|us|our|ours|you|your|yours|i|me|my|mine)\b/gi, noun);
                 } else {
                     // If no noun found, try to extract from answer text more aggressively
-                    const sentences = answerText.split(/[.!?]+/).filter(s => s.trim().length > 20);
+                    const sentences = answerRawText.split(/[.!?]+/).filter(s => s.trim().length > 20);
                     for (const sentence of sentences) {
                         const noun = extractNounFromAnswer(sentence);
                         if (noun) {
@@ -945,6 +1057,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ` : '';
 
             const isImportantQuestion = isImportant(q.id);
+            const importantName = isImportantQuestion ? getImportantQuestionName(q.id) : '';
+            const importantBadge = isImportantQuestion ? `
+                <span style="background: #fee2e2; color: #b91c1c; padding: 0.35rem 0.75rem; border-radius: 999px; font-weight: 800; font-size: 0.75rem; border: 1px solid #fecaca;">
+                    Important${importantName ? `: ${escapeHtml(importantName)}` : ''}
+                </span>
+            ` : '';
 
             const markColors = {
                 1: '#3b82f6',
@@ -965,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span style="color: #64748b; font-size: 0.875rem; font-weight: 600;">
                             Q${questionNumber}
                         </span>
+                        ${importantBadge}
                     </div>
                     
                     <!-- Question Box with Blue Border - Displayed FIRST -->
@@ -1025,14 +1144,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6"></path><path d="M4 14l6-6 2-3"></path></svg>
                         Translate
                     </button>
-                    <button class="btn-icon important-btn ${isImportantQuestion ? 'active' : ''}" title="Important" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#fef2f2' : '#fff'}; color: ${isImportantQuestion ? '#ef4444' : '#64748b'}; border: 1px solid ${isImportantQuestion ? '#fecaca' : '#e2e8f0'}; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? '#ef4444' : 'none'}" stroke="${isImportantQuestion ? '#ef4444' : 'currentColor'}" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    <button class="btn-icon save-important-btn ${isImportantQuestion ? 'active' : ''}" title="Save" data-question-id="${q.id}" style="background: ${isImportantQuestion ? '#ef4444' : '#fff'}; color: ${isImportantQuestion ? '#fff' : '#ef4444'}; border: 1px solid ${isImportantQuestion ? '#ef4444' : '#fecaca'}; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${isImportantQuestion ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         ${isImportantQuestion ? 'Saved' : 'Save'}
                     </button>
                 </div>
             `;
 
-            const answerText = card.querySelector('.answer-text');
+            const answerTextElement = card.querySelector('.answer-text');
             const answerSection = card.querySelector('.answer-section');
             
             if (answerSection) {
@@ -1042,14 +1161,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 answerSection.style.opacity = '1';
             }
             
-            if (answerText) {
-                applyHighlights(q.id, answerText);
+            if (answerTextElement) {
+                applyHighlights(q.id, answerTextElement);
             }
             
             container.appendChild(card);
             
             // Ensure answer is visible
-            const answerSection = card.querySelector('.answer-section');
             if (answerSection) {
                 answerSection.style.display = 'block';
                 answerSection.style.visibility = 'visible';
@@ -1440,27 +1558,25 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        document.querySelectorAll('.important-btn').forEach(btn => {
+        // Save button handlers (Save as Important)
+        document.querySelectorAll('.save-important-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const questionId = parseInt(btn.getAttribute('data-question-id'));
-                const isNowImportant = toggleImportant(questionId);
-                
-                if (isNowImportant) {
-                    btn.classList.add('active');
-                    btn.style.background = '#fef2f2';
-                    btn.style.color = '#ef4444';
-                    btn.querySelector('svg').setAttribute('fill', '#ef4444');
-                } else {
-                    btn.classList.remove('active');
-                    btn.style.background = '';
-                    btn.style.color = '';
-                    btn.querySelector('svg').setAttribute('fill', 'none');
-                }
-                
+                toggleSaveImportant(questionId);
+
+                // Re-render so badge + filter count update immediately
                 displayQuestionSummary();
+                const filtered = currentFilter === 'all'
+                    ? allQuestions
+                    : currentFilter === 'important'
+                    ? allQuestions.filter(q => isImportant(q.id))
+                    : allQuestions.filter(q => q.marks == currentFilter);
+                renderQuestions(filtered);
             });
         });
+
+        // Important is controlled via Admin + Save button
     }
 
     // Media Management Functions
